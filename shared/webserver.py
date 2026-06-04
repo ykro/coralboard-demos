@@ -26,6 +26,13 @@ _subscribers = set()
 _subscribers_lock = threading.Lock()
 _latest = {"photo": None, "text": "", "mood": "#111111", "title": ""}
 _photo_path = {"path": None}
+_action_handler = {"fn": None}
+
+
+def set_action_handler(fn):
+    """Register a callback fn(params: dict) invoked for GET /action?key=val...
+    Lets a demo expose live controls from its web page (e.g. LED/buzzer buttons)."""
+    _action_handler["fn"] = fn
 
 
 def broadcast(payload: dict):
@@ -93,8 +100,27 @@ class _Handler(BaseHTTPRequestHandler):
                 self.send_error(404)
         elif path == "/events":
             self._stream_events()
+        elif path == "/action":
+            self._do_action()
         else:
             self.send_error(404)
+
+    def _do_action(self):
+        from urllib.parse import parse_qs, urlparse
+        params = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+        fn = _action_handler["fn"]
+        ok = True
+        if fn:
+            try:
+                fn(params)
+            except Exception:
+                ok = False
+        body = b'{"ok": true}' if ok else b'{"ok": false}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _send_file(self, path, ctype):
         try:

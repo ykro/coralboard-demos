@@ -42,17 +42,25 @@ _stream = {"pipeline": None, "sink": None, "Gst": None}
 
 
 def _brighten(path):
-    """The OV5647 can come out dim; lift it (auto-contrast + a brightness boost)
-    so the scene is visible. Best-effort: a no-op if PIL is missing or the file
-    can't be processed, so capture never crashes. Disable with CORAL_CAM_BRIGHTEN=0."""
-    gain = float(os.environ.get("CORAL_CAM_BRIGHTEN", "1.5"))
-    if gain <= 0:
+    """The OV5647 underexposes indoor scenes (its auto-exposure meters on bright
+    light sources and leaves the rest dark). Lift the shadows with a gamma curve
+    (which, unlike auto-contrast, isn't defeated by a bright lamp pinning the
+    white point) plus a small brightness gain. Best-effort: a no-op if PIL is
+    missing or the file can't be processed, so capture never crashes.
+    Tune with CORAL_CAM_GAMMA (lower = brighter shadows, default 0.45) and
+    CORAL_CAM_BRIGHTEN (linear gain, default 1.3). Set both to 1 to disable."""
+    gamma = float(os.environ.get("CORAL_CAM_GAMMA", "0.45"))
+    gain = float(os.environ.get("CORAL_CAM_BRIGHTEN", "1.3"))
+    if gamma >= 1.0 and gain == 1.0:
         return
     try:
-        from PIL import Image, ImageEnhance, ImageOps
+        from PIL import Image, ImageEnhance
         im = Image.open(path).convert("RGB")
-        im = ImageOps.autocontrast(im, cutoff=1)
-        im = ImageEnhance.Brightness(im).enhance(gain)
+        if 0 < gamma < 1.0:
+            lut = [min(255, int((i / 255.0) ** gamma * 255 + 0.5)) for i in range(256)]
+            im = im.point(lut * 3)           # apply the curve to R, G and B
+        if gain != 1.0:
+            im = ImageEnhance.Brightness(im).enhance(gain)
         im.save(path, "JPEG", quality=85)
     except Exception:
         pass

@@ -59,6 +59,15 @@ def greeting(scene, objs):
     return out
 
 
+def _on_action(params):
+    """Handle the web page's LED/buzzer buttons (GET /action?do=led&color=.. | do=buzz&ms=..)."""
+    action = params.get("do")
+    if action == "led":
+        leds.set_color("#" + params.get("color", "ffffff"))
+    elif action == "buzz":
+        leds.buzz(int(params.get("ms", "150")))
+
+
 def main():
     parser = argparse.ArgumentParser(description="The Coralboard's hello world (camera + NPU + LEDs + buzzer + Gemma)")
     cli.add_common_args(parser)
@@ -67,6 +76,7 @@ def main():
     cli.apply_common_args(args)
 
     webserver.serve(web_dir=os.path.join(os.path.dirname(__file__), "web"))
+    webserver.set_action_handler(_on_action)   # LED/buzzer buttons on the web page
     print("hello_world - board self-test\n")
     steps = []
 

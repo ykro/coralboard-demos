@@ -36,6 +36,15 @@
     .detail { color: #8a91a0; }
     .foot { margin-top: 16px; font-size: 11px; letter-spacing: .12em;
             text-transform: uppercase; color: #5a6072; display: flex; justify-content: space-between; }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+                margin-top: 18px; padding-top: 16px; border-top: 1px solid #262a33; }
+    .ctl-label { font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+                 color: #7d8597; margin-right: 2px; }
+    .btn { font: inherit; font-size: 13px; color: #e9e9ee; background: #21252e;
+           border: 1px solid #323845; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+    .btn .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+                   background: var(--c); margin-right: 6px; transform: translateY(1px); }
+    .btn:hover { background: #2a2f3a; } .btn:active { transform: translateY(1px); }
   </style>
 </head>
 <body>
@@ -48,6 +57,15 @@
       <div class="tag">the board says</div>
       <div class="greeting" id="greeting">waiting for the board...</div>
       <ul class="steps" id="steps"></ul>
+      <div class="controls">
+        <span class="ctl-label">LED</span>
+        <button class="btn" style="--c:#ff0000" onclick="led('ff0000')"><span class="swatch"></span>Red</button>
+        <button class="btn" style="--c:#00ff00" onclick="led('00ff00')"><span class="swatch"></span>Green</button>
+        <button class="btn" style="--c:#0000ff" onclick="led('0000ff')"><span class="swatch"></span>Blue</button>
+        <button class="btn" style="--c:#ffffff" onclick="led('ffffff')"><span class="swatch"></span>White</button>
+        <button class="btn" onclick="led('000000')">Off</button>
+        <button class="btn" onclick="buzz()">Buzz</button>
+      </div>
       <div class="foot"><span id="mode">-</span><span>Coralboard - SL2619 - Coral NPU</span></div>
     </div>
   </div>
@@ -90,6 +108,9 @@
         stepsEl.appendChild(li);
       });
     }
+
+    function led(color) { fetch('/action?do=led&color=' + color); }
+    function buzz() { fetch('/action?do=buzz&ms=150'); }
 
     const es = new EventSource('/events');
     es.onmessage = e => { try { render(JSON.parse(e.data)); } catch (_) {} };
