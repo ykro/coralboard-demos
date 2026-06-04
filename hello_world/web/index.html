@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>hello_world - Coralboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: #0e0f13; color: #e9e9ee;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100dvh; padding: 24px;
+    }
+    .card {
+      width: min(560px, 94vw);
+      background: #15171d; border: 1px solid #262a33; border-radius: 16px;
+      overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,.5);
+    }
+    .frame { position: relative; width: 100%; aspect-ratio: 4/3; background: #000; }
+    .frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .frame svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .box { fill: none; stroke: #3ddc84; stroke-width: 2; }
+    .box-label {
+      fill: #3ddc84; font-size: 13px; font-weight: 600;
+      paint-order: stroke; stroke: #000; stroke-width: 3px;
+    }
+    .body { padding: 20px 22px 22px; }
+    .tag { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #7d8597; }
+    .greeting { font-size: 20px; line-height: 1.45; margin: 8px 0 18px; min-height: 2.5em; }
+    .steps { list-style: none; display: grid; gap: 6px; }
+    .steps li { display: flex; gap: 10px; align-items: baseline; font-size: 14px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; transform: translateY(1px); }
+    .ok { background: #3ddc84; } .bad { background: #f24e4e; }
+    .name { color: #c7ccd6; min-width: 220px; }
+    .detail { color: #8a91a0; }
+    .foot { margin-top: 16px; font-size: 11px; letter-spacing: .12em;
+            text-transform: uppercase; color: #5a6072; display: flex; justify-content: space-between; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="frame">
+      <img id="photo" alt="camera frame" />
+      <svg id="boxes" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="body">
+      <div class="tag">the board says</div>
+      <div class="greeting" id="greeting">waiting for the board...</div>
+      <ul class="steps" id="steps"></ul>
+      <div class="foot"><span id="mode">-</span><span>Coralboard - SL2619 - Coral NPU</span></div>
+    </div>
+  </div>
+
+  <script>
+    const photo = document.getElementById('photo');
+    const boxes = document.getElementById('boxes');
+    const stepsEl = document.getElementById('steps');
+
+    function render(d) {
+      if (!d || d.type !== 'hello') return;
+      document.getElementById('greeting').textContent = d.greeting || '';
+      document.getElementById('mode').textContent = d.mode || '';
+      if (d.photo) photo.src = d.photo + '?t=' + Date.now();
+
+      boxes.innerHTML = '';
+      (d.boxes || []).forEach(b => {
+        const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        r.setAttribute('class', 'box');
+        r.setAttribute('x', (b.x * 100).toFixed(2));
+        r.setAttribute('y', (b.y * 100).toFixed(2));
+        r.setAttribute('width', (b.w * 100).toFixed(2));
+        r.setAttribute('height', (b.h * 100).toFixed(2));
+        boxes.appendChild(r);
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('class', 'box-label');
+        t.setAttribute('x', (b.x * 100 + 1).toFixed(2));
+        t.setAttribute('y', (b.y * 100 + 5).toFixed(2));
+        t.textContent = `${b.label} ${(b.conf * 100).toFixed(0)}%`;
+        boxes.appendChild(t);
+      });
+
+      stepsEl.innerHTML = '';
+      (d.steps || []).forEach(s => {
+        const li = document.createElement('li');
+        li.innerHTML =
+          `<span class="dot ${s.ok ? 'ok' : 'bad'}"></span>` +
+          `<span class="name">${s.name}</span>` +
+          `<span class="detail">${s.detail || ''}</span>`;
+        stepsEl.appendChild(li);
+      });
+    }
+
+    const es = new EventSource('/events');
+    es.onmessage = e => { try { render(JSON.parse(e.data)); } catch (_) {} };
+  </script>
+</body>
+</html>

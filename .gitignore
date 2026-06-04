@@ -1,0 +1,10 @@
+# laptop-only / runtime
+.venv/
+__pycache__/
+*.pyc
+captures/
+run_board.sh
+.tmp/
+
+# model weights - large; get them with models/fetch_models.sh
+models/*.gguf

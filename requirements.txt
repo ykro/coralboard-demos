@@ -1,0 +1,10 @@
+# Dependencies for the Coralboard demos.
+#
+# Gemma 3 270M runs on the Cortex-A55 cores via llama.cpp (GGUF). Vision runs on
+# the NPU through the preinstalled SyNAP CLIs (synap_cli_ic / synap_cli_od) - no
+# torch, no transformers. The web server uses only the Python stdlib.
+#
+# Prebuilt CPU wheels (incl. aarch64) - avoids a long source compile on the board.
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+llama-cpp-python==0.3.23
+Pillow>=10
