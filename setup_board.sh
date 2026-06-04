@@ -22,16 +22,18 @@ export TMPDIR="$HERE/.tmp"; mkdir -p "$TMPDIR"
 if command -v apt-get >/dev/null 2>&1; then
   echo "==> apt packages"
   $SUDO apt-get update -y || true
-  $SUDO apt-get install -y python3 python3-venv python3-pip \
+  $SUDO apt-get install -y python3 python3-venv python3-pip python3-gi \
       gstreamer1.0-tools gstreamer1.0-plugins-good libgpiod-tools || \
-    echo "!! some apt packages failed; gstreamer/libgpiod may be named differently on this image"
+    echo "!! some apt packages failed; gstreamer/gi/libgpiod may be named differently on this image"
 else
-  echo "!! apt not found - ensure python3-venv, gstreamer, and gpioset are present"
+  echo "!! apt not found - ensure python3-venv, python3-gi, gstreamer, and gpioset are present"
 fi
 
 # 2. Python venv + Gemma (CPU, prebuilt wheel - NO torch) ------------------
+# --system-site-packages so the venv can see the system python3-gi (GStreamer
+# bindings) the camera uses; llama-cpp-python + Pillow come from pip below.
 echo "==> python venv + llama-cpp-python (Gemma on CPU; vision uses the NPU/SyNAP)"
-python3 -m venv .venv
+python3 -m venv --system-site-packages .venv
 ./.venv/bin/pip install --upgrade pip
 ./.venv/bin/pip install --no-cache-dir --prefer-binary -r requirements.txt
 

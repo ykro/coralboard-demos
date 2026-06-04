@@ -80,6 +80,8 @@ def main():
                 time.sleep(min_dt - dt)
     except KeyboardInterrupt:
         print("\nbye")
+    finally:
+        camera.release()   # free /dev/video0 so the next run captures cleanly
 
 
 if __name__ == "__main__":

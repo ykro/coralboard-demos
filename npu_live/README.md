@@ -14,8 +14,10 @@ No cloud, no Gemma - just the camera and the NPU. Unplug the network and it keep
    actual loop fps.
 4. Push the frame + latency (ms) + fps + top-5 confidences to the web page over SSE.
 
-The numbers are measured, not assumed. On the board, `inf` is the pure NPU compute (~33 ms); the loop fps
-reflects the real end-to-end rate including frame capture.
+The numbers are measured, not assumed. On the board, `inf` is the pure NPU compute (**~33 ms**, verified);
+the loop runs at **~4-5 fps** end-to-end - the limit is the camera/classifier pipeline around the NPU
+(the `synap_cli_ic` process reloads the model each call), not the NPU inference itself. The headline is
+the latency: the NPU classifies a frame in ~33 ms, locally, on a ~2 W board.
 
 ## Run
 ```bash

@@ -41,14 +41,19 @@ synap_cli_od -m /usr/share/synap/models/object_detection/coco/npu/model.synap im
 - **User button:** `USER_BUTTONn` (gpiochip5 line 26), exposed as input device "keys".
 - **Microphones:** work (card0 `klamath-asoc`, capture; `arecord`). **No speaker** - the buzzer is the
   only audio out. (The demos in this repo don't use the mics, but they are available.)
-- **Camera (OV5647, MIPI CSI):** capture via GStreamer:
-  ```
-  gst-launch-1.0 v4l2src device=/dev/video0 num-buffers=1 ! video/x-raw,width=640,height=480 ! jpegenc ! filesink location=out.jpg
-  ```
-  Pin the caps to `640x480` and feed `jpegenc` directly - a `videoconvert` element breaks the ISP
-  format negotiation. The sensor's auto-exposure needs a few frames to settle, so `shared/camera.py`
-  keeps one persistent stream running and copies the latest frame. If frames are dark or absent after a
-  reboot, re-seat the CSI flex.
+- **Camera (OV5647, MIPI CSI):** pin the caps to `640x480` and feed `jpegenc` directly - a `videoconvert`
+  element breaks the ISP format negotiation. Two ways to capture, both verified:
+  - **One-shot** (simple, but cold-starts the sensor -> ~365 ms and dark until AE settles):
+    ```
+    gst-launch-1.0 v4l2src device=/dev/video0 num-buffers=1 ! video/x-raw,width=640,height=480 ! jpegenc ! filesink location=out.jpg
+    ```
+  - **Continuous** (what `shared/camera.py` uses): a persistent python-gi **appsink** pipeline
+    (`v4l2src io-mode=2 ! ... ! jpegenc ! appsink`) keeps the sensor streaming and pulls the latest JPEG
+    frame (~9 fps, AE stays settled, frames stay valid). NOTE: this ISP's `multifilesink`/file-stream
+    sinks deliver **0 frames** - only `appsink` (or a single `filesink` one-shot) works.
+  - Always **release** the pipeline on exit (`camera.release()`); a leaked GStreamer process keeps
+    `/dev/video0` open and makes every later capture fail (the same class of wedge as the NPU).
+  - If frames are dark or absent after a reboot, re-seat the CSI flex.
 - **No Wi-Fi** (M.2 slot empty) -> connectivity is USB networking (see below).
 
 ## Board access

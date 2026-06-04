@@ -99,7 +99,7 @@ def main():
         print(f"{'[ok]' if s['ok'] else '[!!]'} {s['name']:<30} {s['detail']}")
     print(f"\n{hello}\n")
 
-    leds.set_color("#3ddc84")  # done: green
+    leds.set_color("#00ff00")  # done: green (each channel is on/off, so use a pure color)
     leds.buzz(120)
     webserver.set_photo(photo)
     webserver.broadcast({
@@ -118,6 +118,8 @@ def main():
             time.sleep(1)
     except KeyboardInterrupt:
         print("\nbye")
+    finally:
+        camera.release()   # free /dev/video0 so the next run captures cleanly
 
 
 if __name__ == "__main__":

@@ -1,11 +1,20 @@
-"""Camera capture for the Arducam OV5647 (MIPI CSI).
+"""Camera capture for the OV5647 (MIPI CSI) on the Coralboard.
 
-REAL: grabs a frame via libcamera / GStreamer on the Coralboard.
-MOCK: returns a bundled placeholder image (or a generated one) so the pipeline
-runs on a laptop.
+REAL (board): a persistent GStreamer pipeline (python-gi) keeps the sensor
+streaming and each capture pulls the latest JPEG frame. This matters on this
+board's ISP: a fresh one-shot grab cold-starts the sensor (slow, dark, and on
+this ISP the `multifilesink`/streaming sinks deliver nothing), while a single
+long-lived `appsink` pipeline delivers valid frames continuously (~9 fps) with
+the sensor's auto-exposure kept warm. A one-shot `gst-launch` is the fallback.
 
-Returns the path to a JPEG on disk so it can be both shown on the local web
-page and fed to the vision model.
+MOCK (laptop): a generated gradient placeholder so the pipeline runs without a
+camera.
+
+Returns the path to a JPEG on disk (shown on the web page and fed to the NPU).
+
+Requires `python3-gi` + `gstreamer1.0-plugins-good` on the board for the fast
+path; `setup_board.sh` builds the venv with `--system-site-packages` so the
+system `gi` is visible.
 """
 
 import os
@@ -21,28 +30,26 @@ def capture_frame(out_path: str) -> str:
     return _csi_capture(out_path)
 
 
-# --- Real board path -------------------------------------------------------
-# The OV5647 sensor's auto-exposure needs several frames to converge, so a single
-# one-shot grab comes out almost black. We keep ONE persistent GStreamer stream
-# running (exposure settles once and stays settled) and each capture just copies
-# the latest frame -> bright AND fast (no per-frame pipeline startup).
-# The OV5647 ISP node defaults to NV16 @ 3840x2160 which S_FMT rejects, so we pin
-# explicit raw caps and feed jpegenc directly (a videoconvert element breaks the
-# format negotiation, so it is omitted).
+# --- Real board path: persistent GStreamer appsink -------------------------
 
-_stream = {"proc": None, "dir": None}
+def _gst_caps():
+    return (os.environ.get("CORAL_CAM_DEV", "/dev/video0"),
+            os.environ.get("CORAL_CAM_W", "640"),
+            os.environ.get("CORAL_CAM_H", "480"))
+
+
+_stream = {"pipeline": None, "sink": None, "Gst": None}
 
 
 def _brighten(path):
-    """The OV5647 frames come out dim indoors; lift them (auto-contrast + a
-    brightness boost) so the scene is visible. Best-effort: a no-op if PIL is
-    missing or the file can't be processed, so capture never crashes."""
-    try:
-        from PIL import Image, ImageEnhance, ImageOps
-    except ImportError:
+    """The OV5647 can come out dim; lift it (auto-contrast + a brightness boost)
+    so the scene is visible. Best-effort: a no-op if PIL is missing or the file
+    can't be processed, so capture never crashes. Disable with CORAL_CAM_BRIGHTEN=0."""
+    gain = float(os.environ.get("CORAL_CAM_BRIGHTEN", "1.5"))
+    if gain <= 0:
         return
     try:
-        gain = float(os.environ.get("CORAL_CAM_BRIGHTEN", "1.5"))
+        from PIL import Image, ImageEnhance, ImageOps
         im = Image.open(path).convert("RGB")
         im = ImageOps.autocontrast(im, cutoff=1)
         im = ImageEnhance.Brightness(im).enhance(gain)
@@ -51,109 +58,102 @@ def _brighten(path):
         pass
 
 
-def _gst_caps():
-    return (os.environ.get("CORAL_CAM_DEV", "/dev/video0"),
-            os.environ.get("CORAL_CAM_W", "640"),
-            os.environ.get("CORAL_CAM_H", "480"))
-
-
-def _stop_stream():
-    import contextlib
-    p = _stream.get("proc")
-    if p and p.poll() is None:
-        p.terminate()
-        with contextlib.suppress(Exception):
-            p.wait(timeout=1)
-        if p.poll() is None:
-            p.kill()
-    _stream["proc"] = None
-
-
 def _start_stream():
-    """Launch a persistent capture pipeline that keeps writing the latest JPEG
-    frames to a temp dir (keeping only the last few), then wait for the sensor's
-    auto-exposure to settle so the first served frame isn't dark."""
-    import atexit
-    import glob
-    import subprocess
-    import tempfile
-    import time
+    """Start one long-lived appsink pipeline and let it warm up (the sensor's
+    auto-exposure settles over the first frames). Returns the appsink, or None
+    if python-gi / GStreamer isn't available (caller falls back to a one-shot)."""
+    import gi
+    gi.require_version("Gst", "1.0")
+    from gi.repository import Gst
 
+    Gst.init(None)
     dev, w, h = _gst_caps()
-    d = os.path.join(tempfile.gettempdir(), "coral_cam")
-    os.makedirs(d, exist_ok=True)
-    for f in glob.glob(os.path.join(d, "f_*.jpg")):
-        try:
-            os.remove(f)
-        except OSError:
-            pass
-    proc = subprocess.Popen(
-        ["gst-launch-1.0", "-q", "v4l2src", f"device={dev}",
-         "!", f"video/x-raw,width={w},height={h}", "!", "jpegenc", "!",
-         "multifilesink", f"location={os.path.join(d, 'f_%06d.jpg')}",
-         "max-files=4", "post-messages=false"],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    pipeline = Gst.parse_launch(
+        f"v4l2src device={dev} io-mode=2 ! video/x-raw,width={w},height={h} "
+        f"! jpegenc ! appsink name=s max-buffers=3 drop=true sync=false"
     )
-    _stream["proc"] = proc
-    _stream["dir"] = d
-    atexit.register(_stop_stream)
-    deadline = time.time() + 4.0
-    while time.time() < deadline:
-        if len(glob.glob(os.path.join(d, "f_*.jpg"))) >= 4:
-            time.sleep(0.4)   # a little extra for exposure to converge
-            break
-        time.sleep(0.05)
+    sink = pipeline.get_by_name("s")
+    pipeline.set_state(Gst.State.PLAYING)
+    pipeline.get_state(Gst.SECOND * 5)          # block until PLAYING (or timeout)
+    for _ in range(8):                          # discard warmup frames (AE settling)
+        sink.emit("try-pull-sample", Gst.SECOND)
+
+    import atexit
+    atexit.register(lambda: pipeline.set_state(Gst.State.NULL))
+    _stream.update(pipeline=pipeline, sink=sink, Gst=Gst)
+    return sink
+
+
+def release():
+    """Stop the persistent stream and free /dev/video0. Safe to call anytime;
+    a no-op if no stream is running. Call this on shutdown so a killed demo
+    doesn't leave the camera held (a stuck holder breaks later captures)."""
+    p = _stream.get("pipeline")
+    Gst = _stream.get("Gst")
+    if p is not None and Gst is not None:
+        try:
+            p.set_state(Gst.State.NULL)
+        except Exception:
+            pass
+    _stream.update(pipeline=None, sink=None)
+
+
+def _pull_frame(out_path):
+    """Pull the latest frame from the persistent stream. Returns True on success."""
+    try:
+        if _stream["sink"] is None:
+            if _start_stream() is None:
+                return False
+        Gst, sink = _stream["Gst"], _stream["sink"]
+        smp = sink.emit("try-pull-sample", Gst.SECOND * 2)
+        if not smp:
+            return False
+        buf = smp.get_buffer()
+        ok, info = buf.map(Gst.MapFlags.READ)
+        if not ok:
+            return False
+        try:
+            data = bytes(info.data)
+        finally:
+            buf.unmap(info)
+        if len(data) < 1000 or data[:2] != b"\xff\xd8":
+            return False
+        with open(out_path, "wb") as f:
+            f.write(data)
+        return True
+    except Exception:
+        return False
+
+
+def _oneshot(out_path):
+    """Fallback: a single GStreamer grab. Works on this ISP but cold-starts the
+    sensor (slower, and dark until AE settles)."""
+    import subprocess
+    dev, w, h = _gst_caps()
+    subprocess.run(
+        ["gst-launch-1.0", "-q", "v4l2src", f"device={dev}", "num-buffers=1",
+         "!", f"video/x-raw,width={w},height={h}", "!", "jpegenc", "!",
+         "filesink", f"location={out_path}"],
+        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    return out_path
 
 
 def _csi_capture(out_path: str) -> str:
-    """Capture from the OV5647 over CSI. Uses a persistent GStreamer stream so
-    auto-exposure stays settled and each frame is bright; falls back to Pi tools
-    or a one-shot grab if streaming is unavailable."""
-    import glob
     import shutil
-    import subprocess
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-
-    # Pi-style tools (present on some images)
-    for tool in ("rpicam-jpeg", "libcamera-jpeg"):
-        if shutil.which(tool):
-            subprocess.run(
-                [tool, "-n", "-t", "800", "--width", "1024", "--height", "768", "-o", out_path],
-                check=True,
-            )
-            return out_path
-
-    if shutil.which("gst-launch-1.0"):
-        dev, w, h = _gst_caps()
-        proc = _stream.get("proc")
-        if proc is None or proc.poll() is not None:
-            _start_stream()
-        d = _stream.get("dir")
-        files = sorted(glob.glob(os.path.join(d, "f_*.jpg"))) if d else []
-        # second-newest is guaranteed fully written (the newest may be mid-flush)
-        src = files[-2] if len(files) >= 2 else (files[-1] if files else None)
-        if src:
-            try:
-                shutil.copyfile(src, out_path)
-                _brighten(out_path)
-                return out_path
-            except OSError:
-                pass
-        # fallback: one-shot grab (darker, but never empty)
-        subprocess.run(
-            ["gst-launch-1.0", "-q", "-e", "v4l2src", f"device={dev}", "num-buffers=1",
-             "!", f"video/x-raw,width={w},height={h}", "!", "jpegenc", "!", "filesink",
-             f"location={out_path}"],
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    if not shutil.which("gst-launch-1.0"):
+        raise RuntimeError(
+            "No GStreamer found (gst-launch-1.0). Run with --mock, or install "
+            "gstreamer1.0-tools + gstreamer1.0-plugins-good on the board."
         )
+    if _pull_frame(out_path):       # preferred: persistent appsink stream
         _brighten(out_path)
         return out_path
-
-    raise RuntimeError(
-        "No CSI capture tool found (rpicam-jpeg / libcamera-jpeg / gst-launch-1.0). "
-        "Run with --mock, or adjust shared/camera.py to your board's camera stack."
-    )
+    _oneshot(out_path)              # fallback: cold one-shot grab
+    _brighten(out_path)
+    return out_path
 
 
 # --- Mock path -------------------------------------------------------------
