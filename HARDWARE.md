@@ -53,7 +53,11 @@ synap_cli_od -m /usr/share/synap/models/object_detection/coco/npu/model.synap im
     sinks deliver **0 frames** - only `appsink` (or a single `filesink` one-shot) works.
   - Always **release** the pipeline on exit (`camera.release()`); a leaked GStreamer process keeps
     `/dev/video0` open and makes every later capture fail (the same class of wedge as the NPU).
-  - If frames are dark or absent after a reboot, re-seat the CSI flex.
+  - Indoor frames look dark: the sensor's auto-exposure meters on bright light sources (a ceiling lamp)
+    and underexposes the rest. `shared/camera.py` lifts the shadows with a gamma curve - tune it with
+    `CORAL_CAM_GAMMA` (default `0.45`, lower = brighter) and `CORAL_CAM_BRIGHTEN` (default `1.3`); set
+    both to `1` to disable. Gamma beats auto-contrast here, which a bright lamp pinning the white point
+    defeats. If frames are *absent* (not just dark) after a reboot, re-seat the CSI flex.
 - **No Wi-Fi** (M.2 slot empty) -> connectivity is USB networking (see below).
 
 ## Board access

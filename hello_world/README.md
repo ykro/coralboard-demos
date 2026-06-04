@@ -14,6 +14,10 @@ also works as a bring-up self-test: run it first to confirm your board is alive.
 
 Each step is wrapped so a missing subsystem shows a clear status line instead of crashing.
 
+The web page also has live controls: buttons to set the RGB LED (Red/Green/Blue/White/Off) and to beep
+the buzzer, so you can drive those peripherals by hand after the first pass. They post to `GET /action`
+(`do=led&color=RRGGBB` or `do=buzz&ms=N`), handled in `main.py` via `webserver.set_action_handler`.
+
 ## Run
 ```bash
 # Laptop (hardware mocked, Gemma real):
@@ -37,3 +41,7 @@ buzzer (`BUZZERn`, gpiochip0 line 6, via `gpioset`), Gemma 3 270M on the A55 cor
 - `CORAL_LED_RED` / `CORAL_LED_GREEN` / `CORAL_LED_BLUE` - LED class names (defaults `*:status`).
 - `CORAL_BUZZER_CHIP` / `CORAL_BUZZER_LINE` / `CORAL_BUZZER_ON` - buzzer GPIO line + active value.
 - `CORAL_WEB_PORT` - web port (default 8090).
+- `CORAL_CAM_GAMMA` / `CORAL_CAM_BRIGHTEN` - indoor-frame shadow lift. The OV5647 underexposes indoor
+  scenes (its auto-exposure meters on bright light sources). `CORAL_CAM_GAMMA` (default `0.45`, lower =
+  brighter shadows) applies a gamma curve; `CORAL_CAM_BRIGHTEN` (default `1.3`) is a linear gain. Set both
+  to `1` to disable. Applied in `shared/camera.py`, so it also affects `npu_live`.
