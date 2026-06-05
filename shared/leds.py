@@ -33,12 +33,13 @@ _LED_CHANNELS = {
 }
 _LED_BASE = os.environ.get("CORAL_LED_BASE", "/sys/class/leds")
 
-# Buzzer GPIO line (libgpiod). The "BUZZERn" line is active-LOW on this board:
-# driving the line LOW (value 0) makes it sound; HIGH (1) is silent. Confirmed on
-# the board (a high pulse stayed silent, a low pulse sounded). Override via env.
+# Buzzer GPIO line (libgpiod). DISABLED by default: this buzzer sits at the user's
+# ears, and active-low driving left the line resting low -> continuous sound. The
+# buzzer never fires unless CORAL_BUZZER_ENABLE=1 is set explicitly by the user.
+_BUZZER_ENABLE = os.environ.get("CORAL_BUZZER_ENABLE", "0") == "1"
 _BUZZER_CHIP = os.environ.get("CORAL_BUZZER_CHIP", "gpiochip0")
 _BUZZER_LINE = os.environ.get("CORAL_BUZZER_LINE", "6")
-_BUZZER_ON = os.environ.get("CORAL_BUZZER_ON", "0")  # value that makes it sound (active-low)
+_BUZZER_ON = os.environ.get("CORAL_BUZZER_ON", "1")  # value gpioset drives during a pulse
 
 
 def set_color(hex_color: str) -> None:
@@ -50,7 +51,11 @@ def set_color(hex_color: str) -> None:
 
 
 def buzz(ms: int = 120) -> None:
-    """Beep the buzzer for `ms` milliseconds."""
+    """Beep the buzzer for `ms` milliseconds. NO-OP unless CORAL_BUZZER_ENABLE=1:
+    the buzzer is at the user's ears, so it never sounds without an explicit opt-in."""
+    if not _BUZZER_ENABLE:
+        print(f"(buzz disabled; set CORAL_BUZZER_ENABLE=1 to allow) {ms}ms")
+        return
     if config.MOCK:
         print(f"(buzz) {ms}ms")
         return

@@ -137,7 +137,7 @@ def main():
     print(f"\n{hello}\n")
 
     leds.set_color("#00ff00")  # done: green (each channel is on/off, so use a pure color)
-    leds.buzz(250)             # single short confirmation beep (audible, brief)
+    # No auto-buzz: the buzzer never sounds on its own (CORAL_BUZZER_ENABLE opt-in only).
 
     def _payload(photo, scene, dets, greeting):
         return {
