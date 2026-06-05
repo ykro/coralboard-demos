@@ -24,8 +24,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from shared import (camera, cli, config, gemma_client, leds, vision_labels,
-                    webserver)
+from shared import (camera, cli, config, gemma_client, leds, textutil,
+                    vision_labels, webserver)
 
 FRAME = os.path.join(os.path.dirname(__file__), "..", "captures", "hello.jpg")
 
@@ -59,13 +59,34 @@ def greeting(scene, objs):
     return out
 
 
+def chat(message):
+    """Free-form chat with Gemma 3 270M for the web chat box. Kept short so the
+    270M on the board's CPU answers in a couple of seconds."""
+    msg = (message or "").strip()[:400]
+    if not msg:
+        return ""
+    prompt = (
+        "You are the Coralboard, a tiny AI dev board running Gemma 3 270M locally "
+        "on your own CPU. Answer the user in ONE or TWO short, friendly sentences.\n\n"
+        f"User: {msg}\nCoralboard: "
+    )
+    out = gemma_client.complete(prompt, max_tokens=80, temperature=0.7,
+                                stop=["\nUser:", "User:", "Coralboard:"]).strip()
+    out = textutil.strip_emojis(out)   # repo convention: no emojis
+    return out or "(no answer)"
+
+
 def _on_action(params):
-    """Handle the web page's LED/buzzer buttons (GET /action?do=led&color=.. | do=buzz&ms=..)."""
+    """Handle the web page's controls.
+    GET /action?do=led&color=..  | do=buzz&ms=..  | do=chat&msg=..
+    Returning a dict sends it back to the browser as JSON."""
     action = params.get("do")
     if action == "led":
         leds.set_color("#" + params.get("color", "ffffff"))
     elif action == "buzz":
-        leds.buzz(int(params.get("ms", "150")))
+        leds.buzz(int(params.get("ms", "200")))
+    elif action == "chat":
+        return {"reply": chat(params.get("msg", ""))}
 
 
 def main():
@@ -110,22 +131,41 @@ def main():
     print(f"\n{hello}\n")
 
     leds.set_color("#00ff00")  # done: green (each channel is on/off, so use a pure color)
-    leds.buzz(120)
+    leds.buzz(250)             # single short confirmation beep (audible, brief)
+
+    def _payload(photo, scene, dets, greeting):
+        return {
+            "type": "hello", "steps": steps,
+            "scene": scene or [],
+            "objects": [d.get("label_en") or d["label"] for d in (dets or [])],
+            "boxes": [{"label": d.get("label_en") or d["label"],
+                       "x": d["box"]["x"], "y": d["box"]["y"],
+                       "w": d["box"]["w"], "h": d["box"]["h"],
+                       "conf": d["confidence"]} for d in (dets or [])],
+            "greeting": greeting, "photo": "/photo.jpg",
+            "mode": "MOCK" if config.MOCK else "BOARD",
+        }
+
     webserver.set_photo(photo)
-    webserver.broadcast({
-        "type": "hello", "steps": steps,
-        "scene": scene or [], "objects": objs,
-        "boxes": [{"label": d.get("label_en") or d["label"],
-                   "x": d["box"]["x"], "y": d["box"]["y"],
-                   "w": d["box"]["w"], "h": d["box"]["h"],
-                   "conf": d["confidence"]} for d in (dets or [])],
-        "greeting": hello, "photo": "/photo.jpg",
-        "mode": "MOCK" if config.MOCK else "BOARD",
-    })
+    webserver.broadcast(_payload(photo, scene, dets, hello))
     print(f"web up at http://<board-ip>:{config.WEB_PORT}  ·  Ctrl-C to quit")
+
+    # Live refresh: keep re-capturing + re-classifying so the page shows a live
+    # frame instead of a single frozen shot. Skipped when a fixed --image is used.
+    refresh = float(os.environ.get("CORAL_REFRESH_SEC", "2.5"))
     try:
         while True:
-            time.sleep(1)
+            time.sleep(refresh)
+            if args.image:
+                continue
+            try:
+                camera.capture_frame(FRAME)
+                scene = vision_labels.scene_labels(FRAME)
+                dets = vision_labels.object_detect(FRAME, min_conf=0.35)
+            except Exception:
+                continue          # transient capture/NPU hiccup: keep the last frame
+            webserver.set_photo(FRAME)
+            webserver.broadcast(_payload(FRAME, scene, dets, hello))
     except KeyboardInterrupt:
         print("\nbye")
     finally:

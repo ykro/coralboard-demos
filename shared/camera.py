@@ -47,10 +47,10 @@ def _brighten(path):
     (which, unlike auto-contrast, isn't defeated by a bright lamp pinning the
     white point) plus a small brightness gain. Best-effort: a no-op if PIL is
     missing or the file can't be processed, so capture never crashes.
-    Tune with CORAL_CAM_GAMMA (lower = brighter shadows, default 0.45) and
-    CORAL_CAM_BRIGHTEN (linear gain, default 1.3). Set both to 1 to disable."""
-    gamma = float(os.environ.get("CORAL_CAM_GAMMA", "0.45"))
-    gain = float(os.environ.get("CORAL_CAM_BRIGHTEN", "1.3"))
+    Tune with CORAL_CAM_GAMMA (lower = brighter shadows, default 0.40) and
+    CORAL_CAM_BRIGHTEN (linear gain, default 1.5). Set both to 1 to disable."""
+    gamma = float(os.environ.get("CORAL_CAM_GAMMA", "0.40"))
+    gain = float(os.environ.get("CORAL_CAM_BRIGHTEN", "1.5"))
     if gamma >= 1.0 and gain == 1.0:
         return
     try:

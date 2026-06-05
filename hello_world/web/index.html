@@ -45,6 +45,18 @@
     .btn .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
                    background: var(--c); margin-right: 6px; transform: translateY(1px); }
     .btn:hover { background: #2a2f3a; } .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: .5; cursor: default; }
+    .chat { margin-top: 18px; padding-top: 16px; border-top: 1px solid #262a33; }
+    .chat-log { display: flex; flex-direction: column; gap: 8px; max-height: 220px;
+                overflow-y: auto; margin-bottom: 10px; }
+    .msg { font-size: 14px; line-height: 1.4; padding: 8px 11px; border-radius: 10px; max-width: 85%; }
+    .msg.me { align-self: flex-end; background: #2b3550; color: #eef1f7; }
+    .msg.bot { align-self: flex-start; background: #1b2029; color: #d7dce6; border: 1px solid #2a3140; }
+    .msg.bot.pending { color: #8a91a0; font-style: italic; }
+    .chat-form { display: flex; gap: 8px; }
+    .chat-input { flex: 1; font: inherit; font-size: 14px; color: #e9e9ee; background: #0f1116;
+                  border: 1px solid #323845; border-radius: 8px; padding: 9px 11px; }
+    .chat-input:focus { outline: none; border-color: #4a5670; }
   </style>
 </head>
 <body>
@@ -62,9 +74,18 @@
         <button class="btn" style="--c:#ff0000" onclick="led('ff0000')"><span class="swatch"></span>Red</button>
         <button class="btn" style="--c:#00ff00" onclick="led('00ff00')"><span class="swatch"></span>Green</button>
         <button class="btn" style="--c:#0000ff" onclick="led('0000ff')"><span class="swatch"></span>Blue</button>
-        <button class="btn" style="--c:#ffffff" onclick="led('ffffff')"><span class="swatch"></span>White</button>
+        <button class="btn" style="--c:#ffffff" onclick="led('ffffff')"><span class="swatch"></span>All</button>
         <button class="btn" onclick="led('000000')">Off</button>
         <button class="btn" onclick="buzz()">Buzz</button>
+      </div>
+      <div class="chat">
+        <span class="ctl-label">Chat with Gemma 3 270M (on-device)</span>
+        <div class="chat-log" id="chatLog" style="margin-top:10px"></div>
+        <form class="chat-form" id="chatForm">
+          <input class="chat-input" id="chatInput" autocomplete="off"
+                 placeholder="Ask the board something..." />
+          <button class="btn" id="chatSend" type="submit">Send</button>
+        </form>
       </div>
       <div class="foot"><span id="mode">-</span><span>Coralboard - SL2619 - Coral NPU</span></div>
     </div>
@@ -110,7 +131,43 @@
     }
 
     function led(color) { fetch('/action?do=led&color=' + color); }
-    function buzz() { fetch('/action?do=buzz&ms=150'); }
+    function buzz() { fetch('/action?do=buzz&ms=400'); }
+
+    // --- Gemma chat ---------------------------------------------------------
+    const chatLog = document.getElementById('chatLog');
+    const chatInput = document.getElementById('chatInput');
+    const chatSend = document.getElementById('chatSend');
+
+    function addMsg(text, cls) {
+      const el = document.createElement('div');
+      el.className = 'msg ' + cls;
+      el.textContent = text;
+      chatLog.appendChild(el);
+      chatLog.scrollTop = chatLog.scrollHeight;
+      return el;
+    }
+
+    document.getElementById('chatForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const text = chatInput.value.trim();
+      if (!text) return;
+      addMsg(text, 'me');
+      chatInput.value = '';
+      chatInput.disabled = chatSend.disabled = true;
+      const pending = addMsg('thinking...', 'bot pending');
+      try {
+        const r = await fetch('/action?do=chat&msg=' + encodeURIComponent(text));
+        const d = await r.json();
+        pending.classList.remove('pending');
+        pending.textContent = d.reply || d.error || '(no answer)';
+      } catch (_) {
+        pending.classList.remove('pending');
+        pending.textContent = '(connection error)';
+      } finally {
+        chatInput.disabled = chatSend.disabled = false;
+        chatInput.focus();
+      }
+    });
 
     const es = new EventSource('/events');
     es.onmessage = e => { try { render(JSON.parse(e.data)); } catch (_) {} };

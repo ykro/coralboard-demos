@@ -109,13 +109,15 @@ class _Handler(BaseHTTPRequestHandler):
         from urllib.parse import parse_qs, urlparse
         params = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
         fn = _action_handler["fn"]
-        ok = True
+        result = {"ok": True}
         if fn:
             try:
-                fn(params)
-            except Exception:
-                ok = False
-        body = b'{"ok": true}' if ok else b'{"ok": false}'
+                ret = fn(params)
+                if isinstance(ret, dict):
+                    result.update(ret)          # let the handler return data (e.g. a chat reply)
+            except Exception as e:
+                result = {"ok": False, "error": f"{type(e).__name__}: {e}"[:120]}
+        body = json.dumps(result).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
