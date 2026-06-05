@@ -59,7 +59,7 @@ flowchart LR
     h2 & h3 --> h4["Gemma greeting (CPU)"]
     h4 --> h5["LED + buzzer + web card"]
     h5 -. "refresh every ~2.5s" .-> h1
-    web1["web controls: LED / buzz /<br/>Gemma chat box (/action)"] --> h4
+    web1["web controls: LED / buzz toggle /<br/>Gemma chat box (/action)"] --> h4
   end
   subgraph N["npu_live (continuous loop)"]
     direction TB
@@ -113,6 +113,16 @@ models/        fetch_models.sh (Gemma GGUF; weights are not in git)
 - All vision is on the **NPU** (`synap_cli_ic` / `synap_cli_od`). No CPU fallback, no torch.
 - The web server is stdlib only (`http.server` + SSE) - nothing to install on the board for the UI.
 - Output, UI, and code are in English.
+- **Buzzer (read this):** the buzzer is **active-low** (`gpiochip0` line 6: `0` sounds, `1` is silent) and
+  this board **latches** the last written value. It **never sounds on its own** - there is no startup beep
+  and nothing triggers it but the web **Buzz** button, which is a **toggle** (press to sound, press again to
+  stop). A safety timer forces it off after `CORAL_BUZZER_MAX_SEC` (default 12 s), the demo silences it on
+  exit, and `CORAL_BUZZER_ENABLE=0` hard-disables it. Panic-silence by hand: `gpioset gpiochip0 6=1`.
+  Polarity overrides: `CORAL_BUZZER_ON` / `CORAL_BUZZER_IDLE`.
+- **Camera:** the OV5647 underexposes indoors and casts green. `shared/camera.py` lifts it in software
+  (no v4l2 exposure control exists): gamma shadow-lift + gray-world white balance + black/white-point
+  stretch + denoise. Tune with `CORAL_CAM_GAMMA` (0.50), `CORAL_CAM_BRIGHTEN` (1.3), `CORAL_CAM_WB` (1),
+  `CORAL_CAM_CONTRAST` (2), `CORAL_CAM_DENOISE` (1). Quality is sensor-bound; this pass is the only lever.
 - **Deploying changes:** `copy_to_board.sh` ships `git archive HEAD`, so **commit first** or your edits
   won't go over. A running demo holds the old code in memory - **restart it** (`Ctrl-C` then
   `./run_board.sh ...`) to pick up new code. To view the page without USB networking:
