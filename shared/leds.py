@@ -33,12 +33,12 @@ _LED_CHANNELS = {
 }
 _LED_BASE = os.environ.get("CORAL_LED_BASE", "/sys/class/leds")
 
-# Buzzer GPIO line (libgpiod). Active level + duration are configurable because
-# the "BUZZERn" naming hints active-low but the kernel line flag reads active-high;
-# CORAL_BUZZER_ON is confirmed on the board during bring-up.
+# Buzzer GPIO line (libgpiod). The "BUZZERn" line is active-LOW on this board:
+# driving the line LOW (value 0) makes it sound; HIGH (1) is silent. Confirmed on
+# the board (a high pulse stayed silent, a low pulse sounded). Override via env.
 _BUZZER_CHIP = os.environ.get("CORAL_BUZZER_CHIP", "gpiochip0")
 _BUZZER_LINE = os.environ.get("CORAL_BUZZER_LINE", "6")
-_BUZZER_ON = os.environ.get("CORAL_BUZZER_ON", "1")  # value that makes it sound
+_BUZZER_ON = os.environ.get("CORAL_BUZZER_ON", "0")  # value that makes it sound (active-low)
 
 
 def set_color(hex_color: str) -> None:

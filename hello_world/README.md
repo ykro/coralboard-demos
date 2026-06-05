@@ -3,20 +3,28 @@
 The Coralboard's "hello, world". The smallest demo that exercises every part of the board at once, so it
 also works as a bring-up self-test: run it first to confirm your board is alive.
 
-## What it does (one pass)
-1. **Camera** - capture one frame from the OV5647 (`shared/camera.py`, GStreamer).
+## What it does (one pass, then live)
+1. **Camera** - capture a frame from the OV5647 (`shared/camera.py`, GStreamer).
 2. **NPU classify** - `synap_cli_ic` (MobileNetV2 / ImageNet) names the scene (~33 ms inference).
 3. **NPU detect** - `synap_cli_od` (COCO) finds objects + boxes.
 4. **Gemma 3 270M** - writes a one-line greeting about what it saw (CPU, llama.cpp).
 5. **Output** - sets the RGB status LED (blue while booting -> amber while thinking -> green when done),
-   beeps the buzzer, and pushes the frame + boxes + greeting + a per-subsystem status list to a local web
-   page.
+   beeps the buzzer once, and pushes the frame + boxes + greeting + a per-subsystem status list to a local
+   web page.
+
+After that first pass the camera **keeps refreshing live** (re-capture + re-classify every
+`CORAL_REFRESH_SEC`, default 2.5s) so the page shows a live frame, not a frozen shot.
 
 Each step is wrapped so a missing subsystem shows a clear status line instead of crashing.
 
-The web page also has live controls: buttons to set the RGB LED (Red/Green/Blue/White/Off) and to beep
-the buzzer, so you can drive those peripherals by hand after the first pass. They post to `GET /action`
-(`do=led&color=RRGGBB` or `do=buzz&ms=N`), handled in `main.py` via `webserver.set_action_handler`.
+The web page also has live controls:
+- **RGB LED** buttons (Red / Green / Blue / All / Off) and a **Buzz** button - drive the peripherals by
+  hand. They post to `GET /action` (`do=led&color=RRGGBB` or `do=buzz&ms=N`).
+- A **Gemma chat box** - free-form chat with the on-device 270M (`do=chat&msg=...`); the reply comes back
+  as JSON (emojis stripped to match the repo's no-emoji convention).
+
+All are handled in `main.py` via `webserver.set_action_handler` (the `/action` endpoint returns the
+handler's dict, so a control can send data back, like the chat reply).
 
 ## Run
 ```bash
@@ -41,7 +49,8 @@ buzzer (`BUZZERn`, gpiochip0 line 6, via `gpioset`), Gemma 3 270M on the A55 cor
 - `CORAL_LED_RED` / `CORAL_LED_GREEN` / `CORAL_LED_BLUE` - LED class names (defaults `*:status`).
 - `CORAL_BUZZER_CHIP` / `CORAL_BUZZER_LINE` / `CORAL_BUZZER_ON` - buzzer GPIO line + active value.
 - `CORAL_WEB_PORT` - web port (default 8090).
+- `CORAL_REFRESH_SEC` - live camera refresh interval after the first pass (default `2.5`).
 - `CORAL_CAM_GAMMA` / `CORAL_CAM_BRIGHTEN` - indoor-frame shadow lift. The OV5647 underexposes indoor
-  scenes (its auto-exposure meters on bright light sources). `CORAL_CAM_GAMMA` (default `0.45`, lower =
-  brighter shadows) applies a gamma curve; `CORAL_CAM_BRIGHTEN` (default `1.3`) is a linear gain. Set both
+  scenes (its auto-exposure meters on bright light sources). `CORAL_CAM_GAMMA` (default `0.40`, lower =
+  brighter shadows) applies a gamma curve; `CORAL_CAM_BRIGHTEN` (default `1.5`) is a linear gain. Set both
   to `1` to disable. Applied in `shared/camera.py`, so it also affects `npu_live`.

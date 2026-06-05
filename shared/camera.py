@@ -47,21 +47,34 @@ def _brighten(path):
     (which, unlike auto-contrast, isn't defeated by a bright lamp pinning the
     white point) plus a small brightness gain. Best-effort: a no-op if PIL is
     missing or the file can't be processed, so capture never crashes.
-    Tune with CORAL_CAM_GAMMA (lower = brighter shadows, default 0.40) and
-    CORAL_CAM_BRIGHTEN (linear gain, default 1.5). Set both to 1 to disable."""
+    Lifting a dark frame amplifies the sensor's low-light noise (colourful speckle
+    + vertical fixed-pattern streaks), so we follow with a light denoise: a median
+    filter + a soft blur kill the speckle, desaturation hides the colour noise (the
+    scene is near-monochrome in the dark anyway), and a touch of sharpening puts
+    edges back. This ISP exposes no exposure/gain v4l2 controls, so this software
+    pass is the only lever on image quality.
+
+    Tune with CORAL_CAM_GAMMA (lower = brighter shadows, default 0.40),
+    CORAL_CAM_BRIGHTEN (linear gain, default 1.5), and CORAL_CAM_DENOISE (1/0,
+    default 1). Set gamma=1, brighten=1, denoise=0 to disable everything."""
     gamma = float(os.environ.get("CORAL_CAM_GAMMA", "0.40"))
     gain = float(os.environ.get("CORAL_CAM_BRIGHTEN", "1.5"))
-    if gamma >= 1.0 and gain == 1.0:
+    denoise = os.environ.get("CORAL_CAM_DENOISE", "1") == "1"
+    if gamma >= 1.0 and gain == 1.0 and not denoise:
         return
     try:
-        from PIL import Image, ImageEnhance
+        from PIL import Image, ImageEnhance, ImageFilter
         im = Image.open(path).convert("RGB")
         if 0 < gamma < 1.0:
             lut = [min(255, int((i / 255.0) ** gamma * 255 + 0.5)) for i in range(256)]
             im = im.point(lut * 3)           # apply the curve to R, G and B
         if gain != 1.0:
             im = ImageEnhance.Brightness(im).enhance(gain)
-        im.save(path, "JPEG", quality=85)
+        if denoise:
+            im = im.filter(ImageFilter.MedianFilter(3)).filter(ImageFilter.GaussianBlur(0.6))
+            im = ImageEnhance.Color(im).enhance(0.6)      # tame colour speckle
+            im = ImageEnhance.Sharpness(im).enhance(1.2)  # restore some edge detail
+        im.save(path, "JPEG", quality=90)
     except Exception:
         pass
 

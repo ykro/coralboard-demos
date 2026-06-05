@@ -67,13 +67,19 @@ def chat(message):
         return ""
     prompt = (
         "You are the Coralboard, a tiny AI dev board running Gemma 3 270M locally "
-        "on your own CPU. Answer the user in ONE or TWO short, friendly sentences.\n\n"
+        "on your own CPU. Reply in the SAME language the user wrote in, in ONE or "
+        "TWO short, concrete sentences. Plain text only, no markdown.\n\n"
         f"User: {msg}\nCoralboard: "
     )
-    out = gemma_client.complete(prompt, max_tokens=80, temperature=0.7,
-                                stop=["\nUser:", "User:", "Coralboard:"]).strip()
-    out = textutil.strip_emojis(out)   # repo convention: no emojis
-    return out or "(no answer)"
+    # A 270M loves to ramble and repeat lines (and sometimes returns nothing). Let
+    # it generate, keep just the first non-empty line, and retry once if it's blank.
+    for temp in (0.6, 0.9):
+        raw = gemma_client.complete(prompt, max_tokens=64, temperature=temp,
+                                    stop=["User:", "Coralboard:"])
+        out = textutil.first_line(textutil.strip_emojis(raw).replace("*", ""))
+        if out:
+            return out
+    return "I'm a tiny 270M model running on this board - try asking that a bit differently."
 
 
 def _on_action(params):

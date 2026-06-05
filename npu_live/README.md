@@ -32,8 +32,8 @@ Flags: `--top N` (classes to show, default 5), `--max-fps F` (caps the loop rate
 realistic - the board rarely hits the cap).
 
 Dark frames? The OV5647 underexposes indoor scenes. `shared/camera.py` lifts the shadows with a gamma
-curve; tune it with `CORAL_CAM_GAMMA` (default `0.45`, lower = brighter) and `CORAL_CAM_BRIGHTEN` (default
-`1.3`). Example: `CORAL_CAM_GAMMA=0.35 ./run_board.sh npu`. See `hello_world/README.md` for details.
+curve; tune it with `CORAL_CAM_GAMMA` (default `0.40`, lower = brighter) and `CORAL_CAM_BRIGHTEN` (default
+`1.5`). Example: `CORAL_CAM_GAMMA=0.30 ./run_board.sh npu`. See `hello_world/README.md` for details.
 
 ## What to expect
 A big **NPU inference (ms)** number, a **frames/sec** number, and five confidence bars. Move an object
