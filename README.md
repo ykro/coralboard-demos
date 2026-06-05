@@ -59,7 +59,7 @@ flowchart LR
     h2 & h3 --> h4["Gemma greeting (CPU)"]
     h4 --> h5["LED + buzzer + web card"]
     h5 -. "refresh every ~2.5s" .-> h1
-    web1["web controls: LED / buzz toggle /<br/>Gemma chat box (/action)"] --> h4
+    web1["web controls: LED / buzz toggle /<br/>scene-grounded Gemma chat (/action)"] --> h4
   end
   subgraph N["npu_live (continuous loop)"]
     direction TB
@@ -121,8 +121,11 @@ models/        fetch_models.sh (Gemma GGUF; weights are not in git)
   Polarity overrides: `CORAL_BUZZER_ON` / `CORAL_BUZZER_IDLE`.
 - **Camera:** the OV5647 underexposes indoors and casts green. `shared/camera.py` lifts it in software
   (no v4l2 exposure control exists): gamma shadow-lift + gray-world white balance + black/white-point
-  stretch + denoise. Tune with `CORAL_CAM_GAMMA` (0.50), `CORAL_CAM_BRIGHTEN` (1.3), `CORAL_CAM_WB` (1),
-  `CORAL_CAM_CONTRAST` (2), `CORAL_CAM_DENOISE` (1). Quality is sensor-bound; this pass is the only lever.
+  stretch + gentle (no-median) denoise, and the frame is captured at high JPEG quality so the lift doesn't
+  amplify 8x8 macroblocks (the "blocky/watercolour" look). Tune with `CORAL_CAM_GAMMA` (0.50),
+  `CORAL_CAM_BRIGHTEN` (1.3), `CORAL_CAM_WB` (1), `CORAL_CAM_CONTRAST` (2), `CORAL_CAM_DENOISE` (1),
+  `CORAL_CAM_JPEG_Q` (92). Quality is sensor-bound (soft + noisy, no exposure control); this pass is the
+  only lever.
 - **Deploying changes:** `copy_to_board.sh` ships `git archive HEAD`, so **commit first** or your edits
   won't go over. A running demo holds the old code in memory - **restart it** (`Ctrl-C` then
   `./run_board.sh ...`) to pick up new code. To view the page without USB networking:

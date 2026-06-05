@@ -30,6 +30,11 @@ from shared import (camera, cli, config, gemma_client, leds, textutil,
 
 FRAME = os.path.join(os.path.dirname(__file__), "..", "captures", "hello.jpg")
 
+# What the camera/NPU saw on the latest pass, so the chat can be grounded in it
+# (a 270M can't free-chat well, but it answers "what do you see?" reliably when
+# the live detections are handed to it). Updated each capture in main().
+_latest = {"scene": [], "objs": []}
+
 
 def _step(name, fn):
     """Run one subsystem check; never raises. Returns (status_dict, value)."""
@@ -68,21 +73,30 @@ def chat(message):
     """Free-form chat with Gemma 3 270M for the web chat box. Kept short so the
     270M on the board's CPU answers in a couple of seconds.
 
+    The chat is GROUNDED in what the camera/NPU currently sees: the live
+    detections are injected into the prompt, so "what do you see?" answers
+    concretely. This is the one thing a 270M does reliably (open-domain chat
+    just loops on a memorised line), and it ties the whole board together
+    (camera -> NPU -> Gemma, all on-device).
+
     A 270M often parrots its own instructions back, so we use a clean few-shot
     Q/A format (no visible "system prompt" to copy) and reject any answer that
     echoes the instructions, then retry / fall back."""
     msg = (message or "").strip()[:400]
     if not msg:
         return ""
+    seen = ", ".join(_latest["objs"] or _latest["scene"] or [])
+    sees = f"Right now Coralboard's camera sees: {seen}.\n" if seen else ""
     prompt = (
         "The following is a short chat with Coralboard, a tiny AI dev board that "
-        "runs Gemma 3 270M on its own CPU. Coralboard answers briefly and concretely "
-        "in the user's language.\n\n"
-        "User: Hello, who are you?\n"
-        "Coralboard: I'm Coralboard, a small board running a 270M model right on my own CPU.\n\n"
+        "runs Gemma 3 270M on its own CPU and has a camera. Coralboard answers in "
+        "ONE short, concrete sentence in the user's language.\n\n"
+        "Right now Coralboard's camera sees: a keyboard, a mug.\n"
+        "User: What do you see?\n"
+        "Coralboard: I can see a keyboard and a mug right in front of me.\n\n"
         "User: How much is 2 + 2?\n"
         "Coralboard: That's 4.\n\n"
-        f"User: {msg}\nCoralboard:"
+        f"{sees}User: {msg}\nCoralboard:"
     )
     for temp in (0.6, 0.9):
         raw = gemma_client.complete(prompt, max_tokens=64, temperature=temp,
@@ -98,7 +112,8 @@ def _echoes_prompt(text):
     low = text.lower()
     return any(s in low for s in (
         "you are the coralboard", "tiny ai dev board", "reply in the same language",
-        "the following is a short chat", "answers briefly", "no markdown"))
+        "the following is a short chat", "answers briefly", "no markdown",
+        "one short, concrete", "in the user's language", "runs gemma 3 270m on its"))
 
 
 def _on_action(params):
@@ -144,6 +159,7 @@ def main():
     objs = [d.get("label_en") or d["label"] for d in (dets or [])]
     od_status["detail"] = ", ".join(objs) if objs else (od_status["detail"] or "no objects")
     steps.append(od_status)
+    _latest.update(scene=scene or [], objs=objs)  # ground the chat in what we just saw
 
     leds.set_color("#f2c14e")  # thinking: amber
     gem_status, hello = _step("Gemma 3 270M", lambda: greeting(scene, objs))
@@ -189,6 +205,8 @@ def main():
                 dets = vision_labels.object_detect(FRAME, min_conf=0.35)
             except Exception:
                 continue          # transient capture/NPU hiccup: keep the last frame
+            _latest.update(scene=scene or [],
+                           objs=[d.get("label_en") or d["label"] for d in (dets or [])])
             webserver.set_photo(FRAME)
             webserver.broadcast(_payload(FRAME, scene, dets, hello))
     except KeyboardInterrupt:

@@ -55,10 +55,13 @@ def _brighten(path):
       3. brightness gain.
       4. black/white-point stretch with a small cutoff -> removes the milky haze
                          that step 1 leaves, robust to a few bright pixels.
-      5. denoise -> the lift amplifies low-light speckle + fixed-pattern streaks,
-                         so median + soft blur kill the speckle, a mild desaturate
-                         tames residual colour noise, and a touch of sharpening
-                         restores edges.
+      5. denoise -> the lift amplifies low-light speckle + JPEG macroblocks, so a
+                         soft blur melts them, an UnsharpMask restores edges (no
+                         median filter - it posterises into watercolour blobs), and
+                         a mild desaturate tames residual colour noise.
+
+    The capture itself is encoded at high JPEG quality (CORAL_CAM_JPEG_Q, default 92)
+    so the shadow-lift isn't amplifying low-quality 8x8 blocks in the first place.
 
     Tune: CORAL_CAM_GAMMA (lower=brighter shadows, default 0.50), CORAL_CAM_BRIGHTEN
     (gain, default 1.3), CORAL_CAM_WB (gray-world WB 1/0, default 1), CORAL_CAM_CONTRAST
@@ -87,10 +90,13 @@ def _brighten(path):
         if cutoff > 0:
             im = ImageOps.autocontrast(im, cutoff=cutoff)  # robust black/white point
         if denoise:
-            im = im.filter(ImageFilter.MedianFilter(3)).filter(ImageFilter.GaussianBlur(0.6))
-            im = ImageEnhance.Color(im).enhance(0.75)     # tame colour speckle
-            im = ImageEnhance.Sharpness(im).enhance(1.2)  # restore some edge detail
-        im.save(path, "JPEG", quality=90)
+            # Gentle, edge-preserving: a soft blur to melt speckle + JPEG blocks,
+            # then UnsharpMask (not a flat Sharpness boost) to bring edges back
+            # without the watercolour posterisation a median filter produces.
+            im = im.filter(ImageFilter.GaussianBlur(0.5))
+            im = im.filter(ImageFilter.UnsharpMask(radius=2, percent=90, threshold=3))
+            im = ImageEnhance.Color(im).enhance(0.88)     # tame residual colour speckle
+        im.save(path, "JPEG", quality=92)
     except Exception:
         pass
 
@@ -105,9 +111,10 @@ def _start_stream():
 
     Gst.init(None)
     dev, w, h = _gst_caps()
-    pipeline = Gst.parse_launch(
+    q = os.environ.get("CORAL_CAM_JPEG_Q", "92")   # high so the shadow-lift below
+    pipeline = Gst.parse_launch(                    # doesn't amplify JPEG macroblocks
         f"v4l2src device={dev} io-mode=2 ! video/x-raw,width={w},height={h} "
-        f"! jpegenc ! appsink name=s max-buffers=3 drop=true sync=false"
+        f"! jpegenc quality={q} ! appsink name=s max-buffers=3 drop=true sync=false"
     )
     sink = pipeline.get_by_name("s")
     pipeline.set_state(Gst.State.PLAYING)
@@ -167,9 +174,10 @@ def _oneshot(out_path):
     sensor (slower, and dark until AE settles)."""
     import subprocess
     dev, w, h = _gst_caps()
+    q = os.environ.get("CORAL_CAM_JPEG_Q", "92")
     subprocess.run(
         ["gst-launch-1.0", "-q", "v4l2src", f"device={dev}", "num-buffers=1",
-         "!", f"video/x-raw,width={w},height={h}", "!", "jpegenc", "!",
+         "!", f"video/x-raw,width={w},height={h}", "!", "jpegenc", f"quality={q}", "!",
          "filesink", f"location={out_path}"],
         check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )

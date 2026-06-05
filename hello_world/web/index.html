@@ -37,8 +37,6 @@
     .ok { background: #3ddc84; } .bad { background: #f24e4e; }
     .name { color: #c7ccd6; min-width: 220px; }
     .detail { color: #8a91a0; }
-    .hint { margin-top: 10px; font-size: 12px; line-height: 1.5; color: #7d8597; }
-    .hint b { color: #aeb6c6; font-weight: 600; }
     .foot { margin-top: 16px; font-size: 11px; letter-spacing: .12em;
             text-transform: uppercase; color: #5a6072; display: flex; justify-content: space-between; }
     .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
@@ -74,14 +72,8 @@
     <div class="body">
       <div class="tag">the board says</div>
       <div class="greeting" id="greeting">waiting for the board...</div>
-      <div class="tag" style="margin-bottom:8px">self-test &middot; what each part reported</div>
+      <div class="tag" style="margin-bottom:8px">self-test</div>
       <ul class="steps" id="steps"></ul>
-      <p class="hint" id="stepsHint">
-        Green dot = working. <b>Camera</b>: grabbed a frame.
-        <b>NPU classify</b>: the scene the Coral NPU recognized.
-        <b>NPU detect</b>: objects it boxed (with a confidence&nbsp;%).
-        <b>Gemma</b>: the on-device language model that wrote the greeting above.
-      </p>
       <div class="controls">
         <span class="ctl-label">LED</span>
         <button class="btn" style="--c:#ff0000" onclick="led('ff0000')"><span class="swatch"></span>Red</button>

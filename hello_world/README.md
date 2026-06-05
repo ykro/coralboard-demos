@@ -21,9 +21,11 @@ The web page also has live controls:
 - **RGB LED** buttons (Red / Green / Blue / All / Off) and a **Buzz** button - drive the peripherals by
   hand. They post to `GET /action` (`do=led&color=RRGGBB` or `do=buzz`). **Buzz is a toggle** (press to
   sound, press again to stop; the button shows "Buzz (on)" while sounding) with a safety auto-off.
-- A **Gemma chat box** - free-form chat with the on-device 270M (`do=chat&msg=...`); the reply comes back
-  as JSON (emojis stripped; replies that just parrot the instructions are rejected and retried).
-- A short **self-test legend** under the status list explains what each `[ok]` line means.
+- A **Gemma chat box** - chat with the on-device 270M (`do=chat&msg=...`); the reply comes back as JSON
+  (emojis stripped; parroted replies are rejected and retried). The chat is **grounded in what the camera
+  /NPU currently sees** (the live detections are injected into the prompt), so `What do you see?` answers
+  concretely - the one thing a 270M does reliably. Open-domain chat just loops on a memorised line; that's
+  the model size, not a bug.
 
 All are handled in `main.py` via `webserver.set_action_handler` (the `/action` endpoint returns the
 handler's dict, so a control can send data back, like the chat reply).
@@ -59,5 +61,6 @@ latches its last value), Gemma 3 270M on the A55 cores. See `../HARDWARE.md`.
 - **Camera** (OV5647 underexposes indoors + casts green; no v4l2 exposure control, so this is the only
   lever): `CORAL_CAM_GAMMA` (shadow lift, default `0.50`, lower = brighter), `CORAL_CAM_BRIGHTEN` (gain,
   default `1.3`), `CORAL_CAM_WB` (gray-world white balance, default `1`), `CORAL_CAM_CONTRAST`
-  (black/white-point stretch cutoff %, default `2`), `CORAL_CAM_DENOISE` (default `1`). Applied in
-  `shared/camera.py`, so it also affects `npu_live`.
+  (black/white-point stretch cutoff %, default `2`), `CORAL_CAM_DENOISE` (default `1`), `CORAL_CAM_JPEG_Q`
+  (capture JPEG quality, default `92` - high so the shadow-lift doesn't amplify 8x8 macroblocks). Applied
+  in `shared/camera.py`, so it also affects `npu_live`.
