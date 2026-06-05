@@ -33,13 +33,17 @@ _LED_CHANNELS = {
 }
 _LED_BASE = os.environ.get("CORAL_LED_BASE", "/sys/class/leds")
 
-# Buzzer GPIO line (libgpiod). DISABLED by default: this buzzer sits at the user's
-# ears, and active-low driving left the line resting low -> continuous sound. The
-# buzzer never fires unless CORAL_BUZZER_ENABLE=1 is set explicitly by the user.
-_BUZZER_ENABLE = os.environ.get("CORAL_BUZZER_ENABLE", "0") == "1"
+# Buzzer GPIO line (libgpiod). SAFETY CONTRACT: this buzzer sits at the user's ears.
+# It must NEVER sound on its own - there is no auto-beep anywhere, and nothing calls
+# buzz() except a deliberate press of the web "Buzz" button. Every beep is a single
+# fixed-duration pulse that returns the line to SILENCE; we never hold the line down
+# (that earlier left it resting in the sounding state -> continuous tone).
+# CORAL_BUZZER_ENABLE=0 hard-disables it (escape hatch); default on so the button works.
+_BUZZER_ENABLE = os.environ.get("CORAL_BUZZER_ENABLE", "1") == "1"
 _BUZZER_CHIP = os.environ.get("CORAL_BUZZER_CHIP", "gpiochip0")
 _BUZZER_LINE = os.environ.get("CORAL_BUZZER_LINE", "6")
 _BUZZER_ON = os.environ.get("CORAL_BUZZER_ON", "1")  # value gpioset drives during a pulse
+_BUZZER_IDLE = os.environ.get("CORAL_BUZZER_IDLE", "0")  # silent resting value (opposite of ON)
 
 
 def set_color(hex_color: str) -> None:
@@ -51,11 +55,13 @@ def set_color(hex_color: str) -> None:
 
 
 def buzz(ms: int = 120) -> None:
-    """Beep the buzzer for `ms` milliseconds. NO-OP unless CORAL_BUZZER_ENABLE=1:
-    the buzzer is at the user's ears, so it never sounds without an explicit opt-in."""
+    """Beep the buzzer for `ms` milliseconds, then return the line to SILENCE.
+    Only ever called by the user's web "Buzz" button - never on its own. Cap the
+    duration so a stray value can't hold a long tone."""
     if not _BUZZER_ENABLE:
-        print(f"(buzz disabled; set CORAL_BUZZER_ENABLE=1 to allow) {ms}ms")
+        print(f"(buzz disabled via CORAL_BUZZER_ENABLE=0) {ms}ms")
         return
+    ms = max(1, min(int(ms), 1000))  # hard cap: no multi-second tones at the ears
     if config.MOCK:
         print(f"(buzz) {ms}ms")
         return
@@ -96,15 +102,16 @@ def _board_set_color(hex_color: str) -> None:
 
 def _board_buzz(ms: int) -> None:
     import shutil
-    import time
 
     if not shutil.which("gpioset"):
         print(f"(buzz: gpioset not found) {ms}ms")
         return
     spec = f"{_BUZZER_LINE}={_BUZZER_ON}"
     usec = str(int(ms) * 1000)
-    # libgpiod v1 ("--mode=time --usec=") and v2 ("-t <ms>ms") differ; try v1,
-    # then v2, then a held background process as a last resort. Never raise.
+    # ONE fixed-duration pulse, then stop. libgpiod v1 ("--mode=time --usec=") and
+    # v2 ("-t <ms>ms") differ, so try both. We deliberately do NOT keep a held
+    # background process: that is what could leave the line stuck in the sounding
+    # state -> a continuous tone. A bounded pulse always ends. Never raise.
     attempts = [
         ["gpioset", "--mode=time", f"--usec={usec}", _BUZZER_CHIP, spec],
         ["gpioset", "-t", f"{int(ms)}ms", _BUZZER_CHIP, spec],
@@ -113,14 +120,17 @@ def _board_buzz(ms: int) -> None:
         try:
             subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL, timeout=int(ms) / 1000 + 2)
-            return
+            break
         except (subprocess.SubprocessError, OSError):
             continue
-    # Last resort: hold the line in the background for `ms`, then release.
-    try:
-        p = subprocess.Popen(["gpioset", "--mode=signal", _BUZZER_CHIP, spec],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        time.sleep(int(ms) / 1000)
-        p.terminate()
-    except (OSError, subprocess.SubprocessError):
+    else:
         print(f"(buzz: gpioset failed) {ms}ms")
+        return
+    # Belt-and-suspenders: explicitly settle the line to its SILENT idle value so a
+    # press can never leave the buzzer humming, whatever the line's default rest is.
+    try:
+        subprocess.run(["gpioset", _BUZZER_CHIP, f"{_BUZZER_LINE}={_BUZZER_IDLE}"],
+                       check=False, stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=2)
+    except (subprocess.SubprocessError, OSError):
+        pass
