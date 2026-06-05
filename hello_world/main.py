@@ -19,6 +19,7 @@ Board with a fixed image (no camera):   ./run_board.sh hello --image /path/to.jp
 
 import argparse
 import os
+import re
 import sys
 import time
 
@@ -41,45 +42,63 @@ def _step(name, fn):
 
 def greeting(scene, objs):
     """Ask Gemma for a one-line greeting about what the NPU saw. Few-shot +
-    completion so the 270M continues the pattern instead of chatting."""
+    completion so the 270M continues the pattern instead of chatting. Kept low
+    temperature and guarded so the tiny model doesn't invent times/numbers
+    (it loves to start with things like "8:00 AM!")."""
     saw = ", ".join(objs or scene or ["something"])
     prompt = (
-        "You are a small board introducing yourself by naming what you SEE, in "
-        "ONE short, friendly sentence. Do not repeat the instructions.\n\n"
-        "I see: a keyboard, a mug\n"
-        "Greeting: Hello! I can see your keyboard and coffee mug. The board is alive and ready.\n\n"
-        "I see: a plant, a window\n"
-        "Greeting: Hi there! A little plant and some nice light over here. Everything checks out.\n\n"
-        f"I see: {saw}\nGreeting: "
+        "Greet the user in ONE short, friendly sentence that names ONLY the things "
+        "in the list. Do not invent times, numbers, places or anything not listed.\n\n"
+        "Things: a keyboard, a mug\n"
+        "Greeting: Hello! I can see your keyboard and coffee mug - the board is alive and ready.\n\n"
+        "Things: a plant, a window\n"
+        "Greeting: Hi there! A little plant and a window over here, and everything checks out.\n\n"
+        f"Things: {saw}\nGreeting: "
     )
-    out = gemma_client.complete(prompt, max_tokens=48, temperature=0.7,
-                                stop=["\n", "I see:", "Greeting:"]).strip()
+    out = gemma_client.complete(prompt, max_tokens=48, temperature=0.4,
+                                stop=["\n", "Things:", "Greeting:"]).strip()
+    # Drop a leading hallucinated time/number prefix ("8:00 AM! ...", "12. ...").
+    out = re.sub(r"^\s*\d[\d:apm\.\s]*[!.\-]\s*", "", out, flags=re.I)
     if sum(c.isalpha() for c in out) < 10:  # 270M misfire (empty / digit soup)
         return f"Hello! I can see {saw} over here. The board is alive and ready."
-    return out
+    return out[0].upper() + out[1:] if out else out
 
 
 def chat(message):
     """Free-form chat with Gemma 3 270M for the web chat box. Kept short so the
-    270M on the board's CPU answers in a couple of seconds."""
+    270M on the board's CPU answers in a couple of seconds.
+
+    A 270M often parrots its own instructions back, so we use a clean few-shot
+    Q/A format (no visible "system prompt" to copy) and reject any answer that
+    echoes the instructions, then retry / fall back."""
     msg = (message or "").strip()[:400]
     if not msg:
         return ""
     prompt = (
-        "You are the Coralboard, a tiny AI dev board running Gemma 3 270M locally "
-        "on your own CPU. Reply in the SAME language the user wrote in, in ONE or "
-        "TWO short, concrete sentences. Plain text only, no markdown.\n\n"
-        f"User: {msg}\nCoralboard: "
+        "The following is a short chat with Coralboard, a tiny AI dev board that "
+        "runs Gemma 3 270M on its own CPU. Coralboard answers briefly and concretely "
+        "in the user's language.\n\n"
+        "User: Hello, who are you?\n"
+        "Coralboard: I'm Coralboard, a small board running a 270M model right on my own CPU.\n\n"
+        "User: How much is 2 + 2?\n"
+        "Coralboard: That's 4.\n\n"
+        f"User: {msg}\nCoralboard:"
     )
-    # A 270M loves to ramble and repeat lines (and sometimes returns nothing). Let
-    # it generate, keep just the first non-empty line, and retry once if it's blank.
     for temp in (0.6, 0.9):
         raw = gemma_client.complete(prompt, max_tokens=64, temperature=temp,
                                     stop=["User:", "Coralboard:"])
         out = textutil.first_line(textutil.strip_emojis(raw).replace("*", ""))
-        if out:
+        if out and not _echoes_prompt(out):
             return out
     return "I'm a tiny 270M model running on this board - try asking that a bit differently."
+
+
+def _echoes_prompt(text):
+    """True if the model parroted the instructions instead of answering."""
+    low = text.lower()
+    return any(s in low for s in (
+        "you are the coralboard", "tiny ai dev board", "reply in the same language",
+        "the following is a short chat", "answers briefly", "no markdown"))
 
 
 def _on_action(params):
@@ -90,7 +109,7 @@ def _on_action(params):
     if action == "led":
         leds.set_color("#" + params.get("color", "ffffff"))
     elif action == "buzz":
-        leds.buzz(int(params.get("ms", "200")))
+        return {"buzzing": leds.buzz_toggle()}   # toggle on/off; report new state
     elif action == "chat":
         return {"reply": chat(params.get("msg", ""))}
 
@@ -175,6 +194,7 @@ def main():
     except KeyboardInterrupt:
         print("\nbye")
     finally:
+        leds.buzz_off()    # never leave the buzzer sounding after we exit
         camera.release()   # free /dev/video0 so the next run captures cleanly
 
 

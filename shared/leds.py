@@ -22,6 +22,7 @@ demo must never crash over a status LED or a beep.
 
 import os
 import subprocess
+import threading
 
 from . import config
 
@@ -42,8 +43,19 @@ _LED_BASE = os.environ.get("CORAL_LED_BASE", "/sys/class/leds")
 _BUZZER_ENABLE = os.environ.get("CORAL_BUZZER_ENABLE", "1") == "1"
 _BUZZER_CHIP = os.environ.get("CORAL_BUZZER_CHIP", "gpiochip0")
 _BUZZER_LINE = os.environ.get("CORAL_BUZZER_LINE", "6")
-_BUZZER_ON = os.environ.get("CORAL_BUZZER_ON", "1")  # value gpioset drives during a pulse
-_BUZZER_IDLE = os.environ.get("CORAL_BUZZER_IDLE", "0")  # silent resting value (opposite of ON)
+# VERIFIED on the board: this is an ACTIVE-LOW buzzer and the GPIO latches its last
+# written value, so 0 = sound (and STAYS sounding until something writes 1). Every
+# beep MUST end by writing the idle value 1, or it tones forever. Panic-silence by
+# hand: `gpioset gpiochip0 6=1`.
+_BUZZER_ON = os.environ.get("CORAL_BUZZER_ON", "0")    # value that SOUNDS (active-low)
+_BUZZER_IDLE = os.environ.get("CORAL_BUZZER_IDLE", "1")  # value that is SILENT at rest
+# Safety backstop: even on a deliberate toggle-on, force the buzzer OFF after this
+# many seconds so it can never be left sounding (e.g. if the page is closed while on).
+_BUZZER_MAX_SEC = float(os.environ.get("CORAL_BUZZER_MAX_SEC", "12"))
+
+# Buzzer toggle state (the web "Buzz" button toggles it on/off, never me).
+_buzz_state = {"on": False, "timer": None}
+_buzz_lock = threading.Lock()
 
 
 def set_color(hex_color: str) -> None:
@@ -54,18 +66,62 @@ def set_color(hex_color: str) -> None:
     _board_set_color(hex_color)
 
 
-def buzz(ms: int = 120) -> None:
-    """Beep the buzzer for `ms` milliseconds, then return the line to SILENCE.
-    Only ever called by the user's web "Buzz" button - never on its own. Cap the
-    duration so a stray value can't hold a long tone."""
+def buzzing() -> bool:
+    """True if the buzzer is currently toggled on."""
+    return _buzz_state["on"]
+
+
+def buzz_toggle() -> bool:
+    """Toggle the buzzer on/off and return the new state (True = now sounding).
+    Only ever called by the user's deliberate web "Buzz" button - never on its own.
+    Turning it on arms a safety timer that forces it back off after _BUZZER_MAX_SEC,
+    so the buzzer can never be left sounding."""
     if not _BUZZER_ENABLE:
-        print(f"(buzz disabled via CORAL_BUZZER_ENABLE=0) {ms}ms")
-        return
-    ms = max(1, min(int(ms), 1000))  # hard cap: no multi-second tones at the ears
+        print("(buzz disabled via CORAL_BUZZER_ENABLE=0)")
+        return False
+    with _buzz_lock:
+        if _buzz_state["on"]:
+            _buzz_off_locked()
+        else:
+            _buzz_on_locked()
+        return _buzz_state["on"]
+
+
+def buzz_off() -> None:
+    """Force the buzzer silent. Safe to call anytime (shutdown, panic)."""
+    with _buzz_lock:
+        _buzz_off_locked()
+
+
+def _buzz_on_locked() -> None:
     if config.MOCK:
-        print(f"(buzz) {ms}ms")
-        return
-    _board_buzz(ms)
+        print("(buzz) ON")
+    else:
+        _board_buzz_on()
+    _buzz_state["on"] = True
+    t = threading.Timer(_BUZZER_MAX_SEC, _buzz_watchdog)
+    t.daemon = True
+    _buzz_state["timer"] = t
+    t.start()
+
+
+def _buzz_off_locked() -> None:
+    if not config.MOCK:
+        _board_buzz_off()
+    else:
+        if _buzz_state["on"]:
+            print("(buzz) OFF")
+    _buzz_state["on"] = False
+    if _buzz_state["timer"] is not None:
+        _buzz_state["timer"].cancel()
+        _buzz_state["timer"] = None
+
+
+def _buzz_watchdog() -> None:
+    with _buzz_lock:
+        if _buzz_state["on"]:
+            print("(buzz) safety auto-off")
+            _buzz_off_locked()
 
 
 # --- Real board path (best-effort; prints on any failure) ------------------
@@ -100,37 +156,26 @@ def _board_set_color(hex_color: str) -> None:
         print(f"(led: sysfs not writable) {hex_color}")
 
 
-def _board_buzz(ms: int) -> None:
+def _board_set_buzz(value: str) -> None:
+    """Latch the buzzer line to `value`. This board RETAINS the last written GPIO
+    value (writing 0 left it sounding), so a plain one-shot write sticks - no held
+    process to orphan and keep sounding if the demo is hard-killed."""
     import shutil
 
     if not shutil.which("gpioset"):
-        print(f"(buzz: gpioset not found) {ms}ms")
+        print("(buzz: gpioset not found)")
         return
-    spec = f"{_BUZZER_LINE}={_BUZZER_ON}"
-    usec = str(int(ms) * 1000)
-    # ONE fixed-duration pulse, then stop. libgpiod v1 ("--mode=time --usec=") and
-    # v2 ("-t <ms>ms") differ, so try both. We deliberately do NOT keep a held
-    # background process: that is what could leave the line stuck in the sounding
-    # state -> a continuous tone. A bounded pulse always ends. Never raise.
-    attempts = [
-        ["gpioset", "--mode=time", f"--usec={usec}", _BUZZER_CHIP, spec],
-        ["gpioset", "-t", f"{int(ms)}ms", _BUZZER_CHIP, spec],
-    ]
-    for cmd in attempts:
-        try:
-            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL, timeout=int(ms) / 1000 + 2)
-            break
-        except (subprocess.SubprocessError, OSError):
-            continue
-    else:
-        print(f"(buzz: gpioset failed) {ms}ms")
-        return
-    # Belt-and-suspenders: explicitly settle the line to its SILENT idle value so a
-    # press can never leave the buzzer humming, whatever the line's default rest is.
+    spec = f"{_BUZZER_LINE}={value}"
     try:
-        subprocess.run(["gpioset", _BUZZER_CHIP, f"{_BUZZER_LINE}={_BUZZER_IDLE}"],
-                       check=False, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, timeout=2)
-    except (subprocess.SubprocessError, OSError):
-        pass
+        subprocess.run(["gpioset", _BUZZER_CHIP, spec], check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+    except (OSError, subprocess.SubprocessError):
+        print("(buzz: gpioset failed)")
+
+
+def _board_buzz_on() -> None:
+    _board_set_buzz(_BUZZER_ON)
+
+
+def _board_buzz_off() -> None:
+    _board_set_buzz(_BUZZER_IDLE)

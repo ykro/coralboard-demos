@@ -43,36 +43,52 @@ _stream = {"pipeline": None, "sink": None, "Gst": None}
 
 def _brighten(path):
     """The OV5647 underexposes indoor scenes (its auto-exposure meters on bright
-    light sources and leaves the rest dark). Lift the shadows with a gamma curve
-    (which, unlike auto-contrast, isn't defeated by a bright lamp pinning the
-    white point) plus a small brightness gain. Best-effort: a no-op if PIL is
-    missing or the file can't be processed, so capture never crashes.
-    Lifting a dark frame amplifies the sensor's low-light noise (colourful speckle
-    + vertical fixed-pattern streaks), so we follow with a light denoise: a median
-    filter + a soft blur kill the speckle, desaturation hides the colour noise (the
-    scene is near-monochrome in the dark anyway), and a touch of sharpening puts
-    edges back. This ISP exposes no exposure/gain v4l2 controls, so this software
-    pass is the only lever on image quality.
+    light sources and leaves the rest dark) and casts a strong green tint. This
+    ISP exposes no exposure/gain v4l2 controls, so this software pass is the only
+    lever on image quality. Best-effort: a no-op if PIL is missing or the file
+    can't be processed, so capture never crashes. The pipeline, in order:
 
-    Tune with CORAL_CAM_GAMMA (lower = brighter shadows, default 0.40),
-    CORAL_CAM_BRIGHTEN (linear gain, default 1.5), and CORAL_CAM_DENOISE (1/0,
-    default 1). Set gamma=1, brighten=1, denoise=0 to disable everything."""
-    gamma = float(os.environ.get("CORAL_CAM_GAMMA", "0.40"))
-    gain = float(os.environ.get("CORAL_CAM_BRIGHTEN", "1.5"))
+      1. gamma curve  -> lift the shadows (not auto-contrast: a bright lamp would
+                         pin the white point and defeat it).
+      2. gray-world white balance -> scale R/G/B to a common mean, killing the
+                         green cast (clamped so it can't wildly overcorrect).
+      3. brightness gain.
+      4. black/white-point stretch with a small cutoff -> removes the milky haze
+                         that step 1 leaves, robust to a few bright pixels.
+      5. denoise -> the lift amplifies low-light speckle + fixed-pattern streaks,
+                         so median + soft blur kill the speckle, a mild desaturate
+                         tames residual colour noise, and a touch of sharpening
+                         restores edges.
+
+    Tune: CORAL_CAM_GAMMA (lower=brighter shadows, default 0.50), CORAL_CAM_BRIGHTEN
+    (gain, default 1.3), CORAL_CAM_WB (gray-world WB 1/0, default 1), CORAL_CAM_CONTRAST
+    (autocontrast cutoff %, default 2; 0 disables), CORAL_CAM_DENOISE (1/0, default 1)."""
+    gamma = float(os.environ.get("CORAL_CAM_GAMMA", "0.50"))
+    gain = float(os.environ.get("CORAL_CAM_BRIGHTEN", "1.3"))
+    wb = os.environ.get("CORAL_CAM_WB", "1") == "1"
+    cutoff = float(os.environ.get("CORAL_CAM_CONTRAST", "2"))
     denoise = os.environ.get("CORAL_CAM_DENOISE", "1") == "1"
-    if gamma >= 1.0 and gain == 1.0 and not denoise:
+    if gamma >= 1.0 and gain == 1.0 and not wb and cutoff == 0 and not denoise:
         return
     try:
-        from PIL import Image, ImageEnhance, ImageFilter
+        from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageStat
         im = Image.open(path).convert("RGB")
         if 0 < gamma < 1.0:
             lut = [min(255, int((i / 255.0) ** gamma * 255 + 0.5)) for i in range(256)]
             im = im.point(lut * 3)           # apply the curve to R, G and B
+        if wb:
+            r, g, b = ImageStat.Stat(im).mean
+            avg = (r + g + b) / 3.0
+            sc = [min(max(avg / max(c, 1.0), 0.6), 1.6) for c in (r, g, b)]  # clamp
+            ch = [[min(255, int(i * sc[k] + 0.5)) for i in range(256)] for k in range(3)]
+            im = im.point(ch[0] + ch[1] + ch[2])
         if gain != 1.0:
             im = ImageEnhance.Brightness(im).enhance(gain)
+        if cutoff > 0:
+            im = ImageOps.autocontrast(im, cutoff=cutoff)  # robust black/white point
         if denoise:
             im = im.filter(ImageFilter.MedianFilter(3)).filter(ImageFilter.GaussianBlur(0.6))
-            im = ImageEnhance.Color(im).enhance(0.6)      # tame colour speckle
+            im = ImageEnhance.Color(im).enhance(0.75)     # tame colour speckle
             im = ImageEnhance.Sharpness(im).enhance(1.2)  # restore some edge detail
         im.save(path, "JPEG", quality=90)
     except Exception:

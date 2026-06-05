@@ -37,6 +37,8 @@
     .ok { background: #3ddc84; } .bad { background: #f24e4e; }
     .name { color: #c7ccd6; min-width: 220px; }
     .detail { color: #8a91a0; }
+    .hint { margin-top: 10px; font-size: 12px; line-height: 1.5; color: #7d8597; }
+    .hint b { color: #aeb6c6; font-weight: 600; }
     .foot { margin-top: 16px; font-size: 11px; letter-spacing: .12em;
             text-transform: uppercase; color: #5a6072; display: flex; justify-content: space-between; }
     .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
@@ -72,7 +74,14 @@
     <div class="body">
       <div class="tag">the board says</div>
       <div class="greeting" id="greeting">waiting for the board...</div>
+      <div class="tag" style="margin-bottom:8px">self-test &middot; what each part reported</div>
       <ul class="steps" id="steps"></ul>
+      <p class="hint" id="stepsHint">
+        Green dot = working. <b>Camera</b>: grabbed a frame.
+        <b>NPU classify</b>: the scene the Coral NPU recognized.
+        <b>NPU detect</b>: objects it boxed (with a confidence&nbsp;%).
+        <b>Gemma</b>: the on-device language model that wrote the greeting above.
+      </p>
       <div class="controls">
         <span class="ctl-label">LED</span>
         <button class="btn" style="--c:#ff0000" onclick="led('ff0000')"><span class="swatch"></span>Red</button>
@@ -80,7 +89,7 @@
         <button class="btn" style="--c:#0000ff" onclick="led('0000ff')"><span class="swatch"></span>Blue</button>
         <button class="btn" style="--c:#ffffff" onclick="led('ffffff')"><span class="swatch"></span>All</button>
         <button class="btn" onclick="led('000000')">Off</button>
-        <button class="btn" onclick="buzz()">Buzz</button>
+        <button class="btn" id="buzzBtn" onclick="buzz()">Buzz</button>
       </div>
       <div class="chat">
         <span class="ctl-label">Chat with Gemma 3 270M (on-device)</span>
@@ -138,7 +147,20 @@
     }
 
     function led(color) { fetch('/action?do=led&color=' + color); }
-    function buzz() { fetch('/action?do=buzz&ms=400'); }
+
+    // Buzz is a toggle: press once to sound, press again to stop. The server
+    // reports the new state; reflect it on the button so you can see it's on.
+    const buzzBtn = document.getElementById('buzzBtn');
+    async function buzz() {
+      try {
+        const r = await fetch('/action?do=buzz');
+        const d = await r.json();
+        const on = !!d.buzzing;
+        buzzBtn.textContent = on ? 'Buzz (on)' : 'Buzz';
+        buzzBtn.style.background = on ? '#7a2230' : '';
+        buzzBtn.style.borderColor = on ? '#b8324a' : '';
+      } catch (_) {}
+    }
 
     // --- Gemma chat ---------------------------------------------------------
     const chatLog = document.getElementById('chatLog');
