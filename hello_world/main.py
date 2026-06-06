@@ -164,7 +164,7 @@ def main():
     leds.set_color("#f2c14e")  # thinking: amber
     gem_status, hello = _step("Gemma 3 270M", lambda: greeting(scene, objs))
     hello = hello or "Hello! The board is alive."
-    gem_status["detail"] = f"backend={config.BACKEND}"
+    gem_status["detail"] = "wrote the greeting above" if gem_status["ok"] else gem_status["detail"]
     steps.append(gem_status)
 
     for s in steps:
@@ -194,6 +194,7 @@ def main():
     # Live refresh: keep re-capturing + re-classifying so the page shows a live
     # frame instead of a single frozen shot. Skipped when a fixed --image is used.
     refresh = float(os.environ.get("CORAL_REFRESH_SEC", "2.5"))
+    last_objs = objs
     try:
         while True:
             time.sleep(refresh)
@@ -205,8 +206,20 @@ def main():
                 dets = vision_labels.object_detect(FRAME, min_conf=0.35)
             except Exception:
                 continue          # transient capture/NPU hiccup: keep the last frame
-            _latest.update(scene=scene or [],
-                           objs=[d.get("label_en") or d["label"] for d in (dets or [])])
+            objs = [d.get("label_en") or d["label"] for d in (dets or [])]
+            _latest.update(scene=scene or [], objs=objs)
+            # Keep the self-test lines honest with the LIVE frame (otherwise the
+            # detect line could say "no objects" while a box is drawn on screen).
+            steps[1]["detail"] = ", ".join(scene) if scene else steps[1]["detail"]
+            steps[2]["detail"] = ", ".join(objs) if objs else "no objects"
+            # Re-greet only when the detected objects change, so the greeting
+            # matches what's on screen without re-running Gemma every tick.
+            if objs and set(objs) != set(last_objs):
+                try:
+                    hello = greeting(scene, objs)
+                except Exception:
+                    pass
+            last_objs = objs
             webserver.set_photo(FRAME)
             webserver.broadcast(_payload(FRAME, scene, dets, hello))
     except KeyboardInterrupt:

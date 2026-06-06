@@ -58,9 +58,14 @@ latches its last value), Gemma 3 270M on the A55 cores. See `../HARDWARE.md`.
   (safety auto-off, default `12`), `CORAL_BUZZER_CHIP` / `CORAL_BUZZER_LINE` (default `gpiochip0` / `6`).
 - `CORAL_WEB_PORT` - web port (default 8090).
 - `CORAL_REFRESH_SEC` - live camera refresh interval after the first pass (default `2.5`).
-- **Camera** (OV5647 underexposes indoors + casts green; no v4l2 exposure control, so this is the only
-  lever): `CORAL_CAM_GAMMA` (shadow lift, default `0.50`, lower = brighter), `CORAL_CAM_BRIGHTEN` (gain,
-  default `1.3`), `CORAL_CAM_WB` (gray-world white balance, default `1`), `CORAL_CAM_CONTRAST`
-  (black/white-point stretch cutoff %, default `2`), `CORAL_CAM_DENOISE` (default `1`), `CORAL_CAM_JPEG_Q`
-  (capture JPEG quality, default `92` - high so the shadow-lift doesn't amplify 8x8 macroblocks). Applied
-  in `shared/camera.py`, so it also affects `npu_live`.
+- **Camera** - the real exposure controls are on the **sensor subdev** (not `/dev/video0`), so
+  `shared/camera.py` puts the OV5647 into hardware auto-exposure / auto-gain / auto-white-balance on
+  every stream start; software then only adds a gentle gamma. Sensor: `CORAL_CAM_AE` / `CORAL_CAM_AGC` /
+  `CORAL_CAM_AWB` (auto exposure / gain / WB, default `1`), `CORAL_CAM_GAIN` (manual `analogue_gain`
+  16-1023 when `AGC=0`), `CORAL_CAM_EXPOSURE` (manual when `AE=0`), `CORAL_CAM_SENSOR_SUBDEV` (override
+  auto-detected subdev), `CORAL_CAM_WARMUP` (frames discarded while AE settles, default `30`). Software:
+  `CORAL_CAM_GAMMA` (shadow lift, default `0.6`, lower = brighter; `>=1` off), `CORAL_CAM_BRIGHTEN`
+  (extra gain, default `1.0`=off), `CORAL_CAM_WB` (software gray-world WB, default `0`), `CORAL_CAM_CONTRAST`
+  (autocontrast cutoff %, default `0`=off), `CORAL_CAM_DENOISE` (default `0`), `CORAL_CAM_STACK`
+  (frame-average N for a static dark scene, default `1`=off), `CORAL_CAM_JPEG_Q` (capture quality, `92`).
+  Applied in `shared/camera.py`, so it also affects `npu_live`.

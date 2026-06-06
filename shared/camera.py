@@ -18,6 +18,7 @@ system `gi` is visible.
 """
 
 import os
+import subprocess
 
 from . import config
 
@@ -42,35 +43,29 @@ _stream = {"pipeline": None, "sink": None, "Gst": None}
 
 
 def _brighten(path):
-    """The OV5647 underexposes indoor scenes (its auto-exposure meters on bright
-    light sources and leaves the rest dark) and casts a strong green tint. This
-    ISP exposes no exposure/gain v4l2 controls, so this software pass is the only
-    lever on image quality. Best-effort: a no-op if PIL is missing or the file
-    can't be processed, so capture never crashes. The pipeline, in order:
+    """Light cosmetic pass on top of an already well-exposed frame.
 
-      1. gamma curve  -> lift the shadows (not auto-contrast: a bright lamp would
-                         pin the white point and defeat it).
-      2. gray-world white balance -> scale R/G/B to a common mean, killing the
-                         green cast (clamped so it can't wildly overcorrect).
-      3. brightness gain.
-      4. black/white-point stretch with a small cutoff -> removes the milky haze
-                         that step 1 leaves, robust to a few bright pixels.
-      5. denoise -> the lift amplifies low-light speckle + JPEG macroblocks, so a
-                         soft blur melts them, an UnsharpMask restores edges (no
-                         median filter - it posterises into watercolour blobs), and
-                         a mild desaturate tames residual colour noise.
+    The heavy lifting now happens IN THE SENSOR: `_configure_sensor()` puts the
+    OV5647 into auto-exposure / auto-gain / auto-white-balance, so the captured
+    frame is properly bright and neutral with real (low-noise) signal. Previously
+    the sensor sat in manual mode at near-minimum gain -> near-black frames, and
+    this function tried to rescue them with a big gamma lift + gray-world WB +
+    autocontrast, which only amplified the noise floor into coloured 'static'.
 
-    The capture itself is encoded at high JPEG quality (CORAL_CAM_JPEG_Q, default 92)
-    so the shadow-lift isn't amplifying low-quality 8x8 blocks in the first place.
+    So this is now just a GENTLE gamma to open the shadows a touch; WB / gain /
+    contrast / denoise default OFF (the sensor handles colour + exposure, and a
+    clean frame needs no denoise). All still available via env for tricky rooms.
+    Best-effort: a no-op if PIL is missing so capture never crashes.
 
-    Tune: CORAL_CAM_GAMMA (lower=brighter shadows, default 0.50), CORAL_CAM_BRIGHTEN
-    (gain, default 1.3), CORAL_CAM_WB (gray-world WB 1/0, default 1), CORAL_CAM_CONTRAST
-    (autocontrast cutoff %, default 2; 0 disables), CORAL_CAM_DENOISE (1/0, default 1)."""
-    gamma = float(os.environ.get("CORAL_CAM_GAMMA", "0.50"))
-    gain = float(os.environ.get("CORAL_CAM_BRIGHTEN", "1.3"))
-    wb = os.environ.get("CORAL_CAM_WB", "1") == "1"
-    cutoff = float(os.environ.get("CORAL_CAM_CONTRAST", "2"))
-    denoise = os.environ.get("CORAL_CAM_DENOISE", "1") == "1"
+    Tune: CORAL_CAM_GAMMA (lower=brighter shadows, default 0.6; >=1 disables),
+    CORAL_CAM_BRIGHTEN (extra gain, default 1.0=off), CORAL_CAM_WB (software
+    gray-world WB 1/0, default 0 - sensor AWB is on), CORAL_CAM_CONTRAST
+    (autocontrast cutoff %, default 0=off), CORAL_CAM_DENOISE (1/0, default 0)."""
+    gamma = float(os.environ.get("CORAL_CAM_GAMMA", "0.6"))
+    gain = float(os.environ.get("CORAL_CAM_BRIGHTEN", "1.0"))
+    wb = os.environ.get("CORAL_CAM_WB", "0") == "1"
+    cutoff = float(os.environ.get("CORAL_CAM_CONTRAST", "0"))
+    denoise = os.environ.get("CORAL_CAM_DENOISE", "0") == "1"
     if gamma >= 1.0 and gain == 1.0 and not wb and cutoff == 0 and not denoise:
         return
     try:
@@ -90,36 +85,102 @@ def _brighten(path):
         if cutoff > 0:
             im = ImageOps.autocontrast(im, cutoff=cutoff)  # robust black/white point
         if denoise:
-            # Gentle, edge-preserving: a soft blur to melt speckle + JPEG blocks,
-            # then UnsharpMask (not a flat Sharpness boost) to bring edges back
-            # without the watercolour posterisation a median filter produces.
-            im = im.filter(ImageFilter.GaussianBlur(0.5))
-            im = im.filter(ImageFilter.UnsharpMask(radius=2, percent=90, threshold=3))
-            im = ImageEnhance.Color(im).enhance(0.88)     # tame residual colour speckle
+            # Frame-averaging (see _pull_frame) already kills most noise without
+            # blur; here just a soft blur for residual speckle + a mild desaturate
+            # for chroma noise. NO sharpen/unsharp - it re-amplifies sensor noise
+            # into the coloured static.
+            im = im.filter(ImageFilter.GaussianBlur(0.4))
+            im = ImageEnhance.Color(im).enhance(0.85)     # tame residual colour speckle
         im.save(path, "JPEG", quality=92)
     except Exception:
         pass
 
 
+_sensor_subdev = None
+
+
+def _find_sensor_subdev():
+    """The exposure / gain / white-balance controls live on the SENSOR subdev,
+    NOT on /dev/video0 (which only exposes `wb_enable`). Find the /dev/v4l-subdev*
+    that carries the OV5647's `analogue_gain` control. Cached; override with
+    CORAL_CAM_SENSOR_SUBDEV."""
+    global _sensor_subdev
+    if _sensor_subdev is not None:
+        return _sensor_subdev
+    env = os.environ.get("CORAL_CAM_SENSOR_SUBDEV")
+    if env:
+        _sensor_subdev = env
+        return env
+    import glob
+    import shutil
+    _sensor_subdev = ""
+    if not shutil.which("v4l2-ctl"):
+        return ""
+    for d in sorted(glob.glob("/dev/v4l-subdev*")):
+        try:
+            out = subprocess.run(["v4l2-ctl", "-d", d, "--list-ctrls"],
+                                 capture_output=True, text=True, timeout=3).stdout
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if "analogue_gain" in out:
+            _sensor_subdev = d
+            return d
+    return ""
+
+
+def _configure_sensor():
+    """Put the OV5647 into auto exposure / auto gain / auto white-balance so it
+    delivers a bright, neutral, low-noise frame in HARDWARE. Without this the
+    sensor powers up in manual mode at near-minimum gain -> near-black frames,
+    and lifting those in software is what produced the coloured 'static'. Must be
+    called after the pipeline is PLAYING (the sensor resets to manual defaults on
+    every stream start). Env overrides:
+      CORAL_CAM_AE / CORAL_CAM_AGC / CORAL_CAM_AWB (1/0, default 1) - auto
+        exposure / gain / white balance.
+      CORAL_CAM_GAIN     - manual analogue_gain (16..1023) when AGC=0.
+      CORAL_CAM_EXPOSURE - manual exposure when AE=0."""
+    dev = _find_sensor_subdev()
+    if not dev:
+        return
+    ae = os.environ.get("CORAL_CAM_AE", "1") == "1"
+    agc = os.environ.get("CORAL_CAM_AGC", "1") == "1"
+    awb = os.environ.get("CORAL_CAM_AWB", "1") == "1"
+    ctrls = [f"auto_exposure={0 if ae else 1}",        # 0=Auto, 1=Manual (V4L2)
+             f"gain_automatic={1 if agc else 0}",
+             f"white_balance_automatic={1 if awb else 0}"]
+    if not agc and os.environ.get("CORAL_CAM_GAIN"):
+        ctrls.append("analogue_gain=" + os.environ["CORAL_CAM_GAIN"])
+    if not ae and os.environ.get("CORAL_CAM_EXPOSURE"):
+        ctrls.append("exposure=" + os.environ["CORAL_CAM_EXPOSURE"])
+    try:
+        subprocess.run(["v4l2-ctl", "-d", dev, "--set-ctrl", ",".join(ctrls)],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def _start_stream():
-    """Start one long-lived appsink pipeline and let it warm up (the sensor's
-    auto-exposure settles over the first frames). Returns the appsink, or None
-    if python-gi / GStreamer isn't available (caller falls back to a one-shot)."""
+    """Start one long-lived appsink pipeline, switch the sensor to auto
+    exposure/gain/WB, and let auto-exposure settle over the first frames. Returns
+    the appsink, or None if python-gi / GStreamer isn't available (caller falls
+    back to a one-shot)."""
     import gi
     gi.require_version("Gst", "1.0")
     from gi.repository import Gst
 
     Gst.init(None)
     dev, w, h = _gst_caps()
-    q = os.environ.get("CORAL_CAM_JPEG_Q", "92")   # high so the shadow-lift below
-    pipeline = Gst.parse_launch(                    # doesn't amplify JPEG macroblocks
+    q = os.environ.get("CORAL_CAM_JPEG_Q", "92")   # high-quality capture (cheap;
+    pipeline = Gst.parse_launch(                    # avoids JPEG-block artifacts)
         f"v4l2src device={dev} io-mode=2 ! video/x-raw,width={w},height={h} "
         f"! jpegenc quality={q} ! appsink name=s max-buffers=3 drop=true sync=false"
     )
     sink = pipeline.get_by_name("s")
     pipeline.set_state(Gst.State.PLAYING)
     pipeline.get_state(Gst.SECOND * 5)          # block until PLAYING (or timeout)
-    for _ in range(8):                          # discard warmup frames (AE settling)
+    _configure_sensor()                         # auto AE/AGC/AWB on the sensor
+    warm = int(os.environ.get("CORAL_CAM_WARMUP", "30"))
+    for _ in range(warm):                       # discard frames while AE converges
         sink.emit("try-pull-sample", Gst.SECOND)
 
     import atexit
@@ -142,31 +203,73 @@ def release():
     _stream.update(pipeline=None, sink=None)
 
 
-def _pull_frame(out_path):
-    """Pull the latest frame from the persistent stream. Returns True on success."""
+def _pull_bytes():
+    """Pull one latest JPEG frame from the persistent stream as bytes (or None)."""
     try:
         if _stream["sink"] is None:
             if _start_stream() is None:
-                return False
+                return None
         Gst, sink = _stream["Gst"], _stream["sink"]
         smp = sink.emit("try-pull-sample", Gst.SECOND * 2)
         if not smp:
-            return False
+            return None
         buf = smp.get_buffer()
         ok, info = buf.map(Gst.MapFlags.READ)
         if not ok:
-            return False
+            return None
         try:
             data = bytes(info.data)
         finally:
             buf.unmap(info)
         if len(data) < 1000 or data[:2] != b"\xff\xd8":
-            return False
-        with open(out_path, "wb") as f:
-            f.write(data)
-        return True
+            return None
+        return data
     except Exception:
+        return None
+
+
+def _average(frames):
+    """Running pixel mean of N PIL images. Random sensor noise is uncorrelated
+    frame-to-frame, so it averages down ~sqrt(N) while real detail stays put -
+    the one denoise that adds no blur. (Image.blend(a,b,1/k) = running mean.)"""
+    from PIL import Image
+    avg = frames[0]
+    for k, f in enumerate(frames[1:], start=2):
+        if f.size != avg.size:
+            f = f.resize(avg.size)
+        avg = Image.blend(avg, f, 1.0 / k)
+    return avg
+
+
+def _pull_frame(out_path):
+    """Pull a frame (or a stack of frames, averaged) from the persistent stream.
+    CORAL_CAM_STACK frames are averaged to beat down the OV5647's heavy low-light
+    noise without the blur/posterisation a spatial denoise causes. Returns True
+    on success."""
+    data = _pull_bytes()
+    if data is None:
         return False
+    # Frame-averaging is off by default now the sensor exposes properly (it would
+    # only add motion ghosting); set CORAL_CAM_STACK>1 for extra denoise on a
+    # static scene in a very dark room.
+    n = int(os.environ.get("CORAL_CAM_STACK", "1"))
+    if n > 1:
+        try:
+            import io
+            from PIL import Image
+            frames = [Image.open(io.BytesIO(data)).convert("RGB")]
+            for _ in range(n - 1):
+                d = _pull_bytes()
+                if d is not None:
+                    frames.append(Image.open(io.BytesIO(d)).convert("RGB"))
+            if len(frames) > 1:
+                _average(frames).save(out_path, "JPEG", quality=95)
+                return True
+        except Exception:
+            pass  # fall through to writing the single raw frame
+    with open(out_path, "wb") as f:
+        f.write(data)
+    return True
 
 
 def _oneshot(out_path):

@@ -119,13 +119,15 @@ models/        fetch_models.sh (Gemma GGUF; weights are not in git)
   stop). A safety timer forces it off after `CORAL_BUZZER_MAX_SEC` (default 12 s), the demo silences it on
   exit, and `CORAL_BUZZER_ENABLE=0` hard-disables it. Panic-silence by hand: `gpioset gpiochip0 6=1`.
   Polarity overrides: `CORAL_BUZZER_ON` / `CORAL_BUZZER_IDLE`.
-- **Camera:** the OV5647 underexposes indoors and casts green. `shared/camera.py` lifts it in software
-  (no v4l2 exposure control exists): gamma shadow-lift + gray-world white balance + black/white-point
-  stretch + gentle (no-median) denoise, and the frame is captured at high JPEG quality so the lift doesn't
-  amplify 8x8 macroblocks (the "blocky/watercolour" look). Tune with `CORAL_CAM_GAMMA` (0.50),
-  `CORAL_CAM_BRIGHTEN` (1.3), `CORAL_CAM_WB` (1), `CORAL_CAM_CONTRAST` (2), `CORAL_CAM_DENOISE` (1),
-  `CORAL_CAM_JPEG_Q` (92). Quality is sensor-bound (soft + noisy, no exposure control); this pass is the
-  only lever.
+- **Camera:** the OV5647's exposure/gain/white-balance controls live on the **sensor subdev**
+  (`/dev/v4l-subdev*`), *not* on `/dev/video0` (which only has `wb_enable`). The sensor powers up in manual
+  mode at near-minimum gain - so it gives near-black frames, and lifting those in software amplifies the
+  noise floor into coloured "static". The fix is in hardware: `shared/camera.py` switches the sensor to
+  **auto exposure / auto gain / auto white-balance** on every stream start (via `v4l2-ctl` on the sensor
+  subdev), then software adds only a gentle gamma. Result: bright, neutral, low-noise frames that adapt to
+  the light. Tune: `CORAL_CAM_AE`/`AGC`/`AWB` (auto, default 1), `CORAL_CAM_GAIN`/`CORAL_CAM_EXPOSURE`
+  (manual when auto off), `CORAL_CAM_GAMMA` (0.6), `CORAL_CAM_JPEG_Q` (92). The OV5647 is still a modest
+  sensor (soft, noisy in true low light) but no longer broken.
 - **Deploying changes:** `copy_to_board.sh` ships `git archive HEAD`, so **commit first** or your edits
   won't go over. A running demo holds the old code in memory - **restart it** (`Ctrl-C` then
   `./run_board.sh ...`) to pick up new code. To view the page without USB networking:
