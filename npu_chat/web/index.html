@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>npu_chat - Gemma on the Coral NPU</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+           background: #0e0f13; color: #e9e9ee; display: flex; align-items: center;
+           justify-content: center; min-height: 100dvh; padding: 24px; }
+    .card { width: min(560px, 94vw); background: #15171d; border: 1px solid #262a33;
+            border-radius: 16px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,.5); }
+    .head { padding: 18px 22px; border-bottom: 1px solid #262a33; }
+    .title { font-size: 17px; font-weight: 650; }
+    .sub { font-size: 12px; color: #7d8597; margin-top: 3px; }
+    .badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+             color: #06140c; background: #3ddc84; border-radius: 999px; padding: 2px 9px; margin-left: 6px; }
+    .body { padding: 18px 22px 22px; }
+    .chat-log { display: flex; flex-direction: column; gap: 9px; min-height: 200px;
+                max-height: 52vh; overflow-y: auto; margin-bottom: 12px; }
+    .msg { font-size: 14px; line-height: 1.45; padding: 9px 12px; border-radius: 11px; max-width: 86%; }
+    .msg.me { align-self: flex-end; background: #2b3550; color: #eef1f7; }
+    .msg.bot { align-self: flex-start; background: #1b2029; color: #d7dce6; border: 1px solid #2a3140; }
+    .msg.bot.pending { color: #8a91a0; font-style: italic; }
+    .stat { font-size: 11px; color: #6f7686; margin: -4px 0 2px 2px; align-self: flex-start; }
+    .empty { color: #5a6072; font-size: 13px; text-align: center; margin: auto 0; }
+    .chat-form { display: flex; gap: 8px; }
+    .chat-input { flex: 1; font: inherit; font-size: 14px; color: #e9e9ee; background: #0f1116;
+                  border: 1px solid #323845; border-radius: 9px; padding: 10px 12px; }
+    .chat-input:focus { outline: none; border-color: #4a5670; }
+    .btn { font: inherit; font-size: 13px; color: #e9e9ee; background: #21252e; border: 1px solid #323845;
+           border-radius: 9px; padding: 10px 14px; cursor: pointer; }
+    .btn:hover { background: #2a2f3a; } .btn:disabled { opacity: .5; cursor: default; }
+    .foot { margin-top: 14px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+            color: #5a6072; display: flex; justify-content: space-between; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="head">
+      <div class="title">Gemma 3 270M <span class="badge" id="badge">on the NPU</span></div>
+      <div class="sub">running on the Coral/Torq NPU — no cloud, no CPU inference</div>
+    </div>
+    <div class="body">
+      <div class="chat-log" id="chatLog"><div class="empty" id="empty">Ask the board something…</div></div>
+      <form class="chat-form" id="chatForm">
+        <input class="chat-input" id="chatInput" autocomplete="off" placeholder="Type a message…" />
+        <button class="btn" id="chatSend" type="submit">Send</button>
+      </form>
+      <div class="foot"><span id="mode">-</span><span>Coralboard · SL2619 · Coral NPU</span></div>
+    </div>
+  </div>
+
+  <script>
+    const chatLog = document.getElementById('chatLog');
+    const chatInput = document.getElementById('chatInput');
+    const chatSend = document.getElementById('chatSend');
+    const empty = document.getElementById('empty');
+
+    function addMsg(text, cls) {
+      if (empty) empty.remove();
+      const el = document.createElement('div');
+      el.className = 'msg ' + cls; el.textContent = text;
+      chatLog.appendChild(el); chatLog.scrollTop = chatLog.scrollHeight;
+      return el;
+    }
+    function addStat(text) {
+      const el = document.createElement('div');
+      el.className = 'stat'; el.textContent = text;
+      chatLog.appendChild(el); chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    document.getElementById('chatForm').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const text = chatInput.value.trim();
+      if (!text) return;
+      addMsg(text, 'me');
+      chatInput.value = '';
+      chatInput.disabled = chatSend.disabled = true;
+      const pending = addMsg('thinking on the NPU…', 'bot pending');
+      try {
+        const r = await fetch('/action?do=chat&msg=' + encodeURIComponent(text));
+        const d = await r.json();
+        pending.classList.remove('pending');
+        pending.textContent = d.reply || d.error || '(no answer)';
+        if (d.tok_s != null) addStat(`${d.device || 'NPU'} · ${d.tokens} tok · ${d.tok_s} tok/s · ttft ${d.ttft_ms}ms`);
+      } catch (_) {
+        pending.classList.remove('pending');
+        pending.textContent = '(connection error)';
+      } finally {
+        chatInput.disabled = chatSend.disabled = false;
+        chatInput.focus();
+      }
+    });
+
+    const es = new EventSource('/events');
+    es.onmessage = e => {
+      try {
+        const d = JSON.parse(e.data);
+        if (d.mode) document.getElementById('mode').textContent = d.mode;
+        if (d.device) document.getElementById('badge').textContent = 'on the ' + d.device.replace('Coral/Torq ', '');
+      } catch (_) {}
+    };
+  </script>
+</body>
+</html>

@@ -12,6 +12,7 @@ runs on the CPU via llama.cpp.
 |------|---------------|------|
 | [`hello_world/`](hello_world/) | The board's "hello world" / bring-up self-test: camera, NPU classify + detect, RGB LED, buzzer, and a Gemma greeting, all in one run. | camera + NPU (both models) + LED + buzzer + Gemma + web |
 | [`npu_live/`](npu_live/) | The NPU's speed, live: continuous classification with the real measured inference latency (ms), the achieved fps, and top-5 confidence bars that react as you move an object. | camera + NPU (classification) + web |
+| [`npu_chat/`](npu_chat/) | Gemma 3 270M running **on the Coral NPU** (compiled bf16 `.vmfb` via Torq), with real tok/s shown per reply. Board-only. NOTE: the NPU is *not* faster than the CPU for this — see [`docs/npu-llm-findings.md`](docs/npu-llm-findings.md). | NPU (Gemma LLM) + web |
 
 See [`HARDWARE.md`](HARDWARE.md) for the verified board details (NPU models, LED/buzzer wiring, camera,
 board access) needed to reproduce these.

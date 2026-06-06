@@ -96,8 +96,12 @@ _DIMS_RE = re.compile(r"w\s*=\s*(\d+),\s*h\s*=\s*(\d+)")
 
 
 def _synap_detect(model, image_path, min_conf, max_items):
+    # synap_cli_od's OWN score threshold defaults to 0.5 - it drops everything
+    # below that BEFORE we ever see it, so real objects at 0.3-0.5 (common indoors
+    # / in modest light) silently never appear. Pass our own min_conf through so
+    # the CLI keeps them and our Python filter below makes the final call.
     out = subprocess.run(
-        ["synap_cli_od", "-m", model, image_path],
+        ["synap_cli_od", "-m", model, "--score-threshold", str(min_conf), image_path],
         capture_output=True, text=True, check=True,
     ).stdout
     data = json.loads(out[out.index("{"):out.rindex("}") + 1])

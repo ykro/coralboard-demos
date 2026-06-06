@@ -8,3 +8,7 @@ run_board.sh
 
 # model weights - large; get them with models/fetch_models.sh
 models/*.gguf
+# NPU (Torq) demo: compiled model + runtime venv + wheels are large / built locally
+models/npu_gemma/
+.venv-npu/
+npu_chat/wheelhouse/
