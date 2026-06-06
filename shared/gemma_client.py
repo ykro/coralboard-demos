@@ -13,17 +13,27 @@ speed/efficiency optimization, documented in models/README.md.
 Gemma 3 270M is text-only; vision is handled separately (see vision_labels).
 """
 
+import threading
+
 from . import config
+
+# llama.cpp's context is NOT reentrant: calling the same Llama instance from two
+# threads at once (e.g. the web chat box on the server thread while the main loop
+# regenerates the greeting) segfaults. Serialize every model call through one lock.
+# The board only has 2 A55 cores anyway, so there's nothing to gain from parallel
+# inference; the chat just waits (showing "thinking...") if a greeting is in flight.
+_llm_lock = threading.Lock()
 
 
 def generate(prompt: str, max_tokens: int = 96, temperature: float = 0.9) -> str:
     """Chat-style generation (instruction following)."""
     if config.BACKEND == "template":
         return _template_generate(prompt)
-    out = _ensure_llm().create_chat_completion(
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=max_tokens, temperature=temperature,
-    )
+    with _llm_lock:
+        out = _ensure_llm().create_chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens, temperature=temperature,
+        )
     return out["choices"][0]["message"]["content"].strip()
 
 
@@ -32,9 +42,10 @@ def complete(prompt: str, max_tokens: int = 64, temperature: float = 0.8, stop=N
     pattern instead of answering conversationally (no 'Sure! Here is...')."""
     if config.BACKEND == "template":
         return _template_generate(prompt)
-    out = _ensure_llm().create_completion(
-        prompt=prompt, max_tokens=max_tokens, temperature=temperature, stop=stop or [],
-    )
+    with _llm_lock:
+        out = _ensure_llm().create_completion(
+            prompt=prompt, max_tokens=max_tokens, temperature=temperature, stop=stop or [],
+        )
     return out["choices"][0]["text"].strip()
 
 
