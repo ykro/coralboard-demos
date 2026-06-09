@@ -129,6 +129,7 @@ def main():
                           daemon=True)
     nt.start()
 
+    hiccups = 0
     print("narrator - live NPU vision, Gemma narrates every few seconds")
     print(f"web up at http://<board-ip>:{config.WEB_PORT}  ·  Ctrl-C to quit")
     leds.set_color("#6c63ff")  # blue/purple while running
@@ -137,8 +138,12 @@ def main():
             t0 = time.monotonic()
             try:
                 res = stream.detect(min_conf=args.min_conf, max_items=10)
+                hiccups = 0
             except Exception as e:
+                hiccups += 1
                 print(f"(detect hiccup) {type(e).__name__}: {e}")
+                if hiccups == 5:
+                    print(f"  -> {synap_stream.NPU_WEDGE_HINT}")
                 time.sleep(0.3)
                 continue
             labels = [d.get("label_en") or d.get("label") for d in res.get("items", [])]

@@ -79,6 +79,7 @@ def main():
     stream = synap_stream.VisionStream(FRAME)
     fps = synap_stream.Fps()
     last_label = ""
+    hiccups = 0
     interval = float(os.environ.get("CORAL_TRIPWIRE_INTERVAL", "0.05"))
 
     print("tripwire - draw a line on the page; objects crossing it are counted")
@@ -89,8 +90,12 @@ def main():
             t0 = time.monotonic()
             try:
                 res = stream.detect(min_conf=args.min_conf, max_items=10)
+                hiccups = 0
             except Exception as e:
+                hiccups += 1
                 print(f"(detect hiccup) {type(e).__name__}: {e}")
+                if hiccups == 5:
+                    print(f"  -> {synap_stream.NPU_WEDGE_HINT}")
                 time.sleep(0.3)
                 continue
             events = counter.update(res.get("items", []))

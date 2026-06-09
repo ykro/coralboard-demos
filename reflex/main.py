@@ -105,6 +105,7 @@ def main():
     fps = synap_stream.Fps()
     debouncer = Debouncer(window=args.window, enter_conf=args.enter_conf)
     last_led = None
+    hiccups = 0
     interval = float(os.environ.get("CORAL_REFLEX_INTERVAL", "0.1"))  # aim ~10 Hz UI
 
     print("reflex - hold an object to the camera; the LED reacts to its category")
@@ -115,8 +116,12 @@ def main():
             t0 = time.monotonic()
             try:
                 res = stream.classify(k=5)
+                hiccups = 0
             except Exception as e:
+                hiccups += 1
                 print(f"(classify hiccup) {type(e).__name__}: {e}")
+                if hiccups == 5:
+                    print(f"  -> {synap_stream.NPU_WEDGE_HINT}")
                 time.sleep(0.3)
                 continue
             bucket, color, decided = imagenet_buckets.bucket_for_topk(

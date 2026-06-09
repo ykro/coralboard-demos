@@ -93,7 +93,16 @@ def serve(web_dir=None, host=None, port=None):
         _WEB_DIR = web_dir
     host = host or config.WEB_HOST
     port = port or config.WEB_PORT
-    httpd = _QuietHTTPServer((host, port), _Handler)
+    try:
+        httpd = _QuietHTTPServer((host, port), _Handler)
+    except OSError as e:
+        # The most common second-run failure: a previous demo still owns the port.
+        # Turn the raw "Address already in use" into something actionable.
+        raise SystemExit(
+            f"web port {port} is unavailable ({e.strerror or e}). Another demo may still be "
+            f"running - stop it, or pick another port: CORAL_WEB_PORT=8095 ./run_board.sh <demo> "
+            f"(then forward 8095). On the board, port 8080 is owned by swupdate."
+        ) from e
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
     print(f"web up at http://{host}:{port} (open on your phone/laptop)")

@@ -70,6 +70,14 @@ def _ensure_llm():
                 "llama-cpp-python not installed. Laptop: use ./.venv (see README). "
                 "Board: run setup_board.sh. Or set CORAL_BACKEND=template."
             ) from e
+        if not os.path.exists(config.MODEL_PATH):
+            # Without this the failure is a low-level llama.cpp error; give the
+            # beginner the one command that fixes it instead.
+            raise RuntimeError(
+                f"Gemma weight not found at {config.MODEL_PATH}. Download it with "
+                "./models/fetch_models.sh (laptop) or ./setup_board.sh (board), or run with "
+                "--backend template for a no-model fallback."
+            )
         _llm = Llama(
             model_path=config.MODEL_PATH,
             n_ctx=2048,

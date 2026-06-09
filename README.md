@@ -36,6 +36,24 @@ to explore the UI and logic without hardware; use the board path for the real on
 See [`HARDWARE.md`](HARDWARE.md) for the verified board details (NPU models, LED/buzzer wiring, camera,
 board access) needed to reproduce these.
 
+## Prerequisites
+
+Install these on your computer first, then get the repo:
+
+- **git** and **Python 3** (3.10+). Needed for both the laptop and board paths.
+- **adb** (Android platform-tools) — only for the **board** path; it's how you reach the headless board.
+  macOS: `brew install android-platform-tools`. Linux: `sudo apt install android-tools-adb` (or your
+  distro's package). Windows: install Google's "SDK Platform-Tools" and add it to PATH. Verify with
+  `adb version`.
+
+```bash
+git clone https://github.com/ykro/coralboard-demos.git
+cd coralboard-demos
+```
+
+The laptop path needs nothing else (`run_laptop.sh` builds its own `.venv`). The board path additionally
+needs the board reachable over USB — see **First run** below.
+
 ## Architecture
 
 ### The board
@@ -141,28 +159,45 @@ hookup (camera + Sensor HAT + USB) is in [`HARDWARE.md`](HARDWARE.md) → **Conn
    ```
    If it's empty, see HARDWARE.md (replug, data cable, etc.).
 
-2. **Copy the code to the board** (run from this repo on your computer):
+2. **Give the board internet over USB** (do this *before* setup). The board has no Wi-Fi, and
+   `setup_board.sh` downloads pip wheels + the Gemma weight, so it needs a connection first:
+   ```bash
+   ./net_board_internet.sh     # shares your computer's internet to the board over USB
+   ```
+   > **macOS only.** `net_board_internet.sh` uses macOS tools (`networksetup`/`pfctl`). On **Linux/Windows**,
+   > enable your OS's internet connection sharing on the USB/RNDIS interface toward the board's subnet
+   > (board `usb0` = `192.168.137.2`, set your USB-gadget interface to `192.168.137.1`, NAT to your upstream,
+   > and set the board's default route + DNS). See HARDWARE.md → **Board access**.
+
+3. **Fetch the Gemma weight on your computer** (it's git-ignored, so `copy_to_board.sh` ships it only if
+   it's already here):
+   ```bash
+   ./models/fetch_models.sh    # downloads the Gemma 3 270M GGUF (~291 MB)
+   ```
+
+4. **Copy the code to the board** (run from this repo on your computer):
    ```bash
    ./copy_to_board.sh          # git archive HEAD + adb push -> /home/root/coralboard-demos
    ```
-   `copy_to_board.sh` ships `git archive HEAD`, so **commit first** or your edits won't go over.
+   `copy_to_board.sh` ships `git archive HEAD`, so **commit first** or your edits won't go over. It also
+   pushes the GGUF fetched in step 3.
 
-3. **Set up + run on the board** (over adb):
+5. **Set up + run on the board** (over adb):
    ```bash
    adb shell
    cd /home/root/coralboard-demos
-   ./setup_board.sh            # one-time: venv + Gemma wheel + GGUF + NPU sanity check
+   ./setup_board.sh            # one-time: venv + Gemma wheel + NPU sanity check (needs the internet from step 2)
    ./run_board.sh hello        # starts the demo; leave it running
    ```
-   `setup_board.sh` needs internet for pip/the GGUF: from your computer, run `./net_board_internet.sh` once
-   (it gives the board internet over USB), then re-run setup.
+   If pip times out here, the board has no internet yet — redo step 2, then re-run `./setup_board.sh`.
 
-4. **Open the web page from your computer.** The board has no Wi-Fi, so forward the port over adb (in a
-   second terminal on your computer):
+6. **Open the web page from your computer.** Forward the port over adb (in a second terminal on your
+   computer):
    ```bash
    adb forward tcp:8090 tcp:8090
    ```
-   Then open **http://localhost:8090**.
+   Then open **http://localhost:8090**. If the demo printed `Address already in use`, port 8090 is taken —
+   stop the other process or run with another port: `CORAL_WEB_PORT=8095 ./run_board.sh hello` (forward 8095).
 
 **What you should see**
 - Console: one `[ok]`/`[!!]` line per subsystem (camera, NPU classify, NPU detect, Gemma), then a
@@ -175,6 +210,10 @@ hookup (camera + Sensor HAT + USB) is in [`HARDWARE.md`](HARDWARE.md) → **Conn
 
 **Stop it cleanly:** `Ctrl-C` in the run shell. Never `kill -9` a `synap_cli_*` mid-inference (it wedges
 the NPU). To redeploy code changes: `Ctrl-C`, `./copy_to_board.sh` (after committing), then `./run_board.sh hello` again.
+
+**If a demo prints `(... hiccup)` over and over**, the NPU is most likely wedged from an earlier `kill -9`
+(the demo also prints a one-line recovery hint after several hiccups): kill any leftover `python`/`synap_cli_*`
+processes on the board (`pkill -f synap_cli; pkill -f run_board`) and run the demo again.
 
 Prefer to try it without the board first? `./run_laptop.sh hello` runs the same demo with mocked hardware
 (real Gemma) — see the laptop quickstart above.

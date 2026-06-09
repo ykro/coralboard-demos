@@ -18,6 +18,23 @@ SUDO=""; [ "$(id -u)" -ne 0 ] && SUDO="$(command -v sudo || true)"
 # Point TMPDIR at disk so wheels unpack onto the eMMC.
 export TMPDIR="$HERE/.tmp"; mkdir -p "$TMPDIR"
 
+# 0. Swap (best-effort) ----------------------------------------------------
+# 2 GB RAM is tight; if pip ever falls back to a source build (e.g. no matching
+# Pillow wheel) it can OOM. Add a small swapfile when there's no swap yet. All
+# best-effort: a failure here never blocks setup (the prebuilt wheels normally
+# need no compile at all).
+if [ "$(id -u)" -eq 0 ] && command -v mkswap >/dev/null 2>&1; then
+  has_swap="$(awk 'NR>1{n++} END{print n+0}' /proc/swaps 2>/dev/null || echo 0)"
+  if [ "$has_swap" -eq 0 ] && [ ! -f "$HERE/.swapfile" ]; then
+    echo "==> no swap found; creating a 2 GB swapfile (best-effort)"
+    { fallocate -l 2G "$HERE/.swapfile" || dd if=/dev/zero of="$HERE/.swapfile" bs=1M count=2048; } 2>/dev/null \
+      && chmod 600 "$HERE/.swapfile" && mkswap "$HERE/.swapfile" >/dev/null 2>&1 \
+      && swapon "$HERE/.swapfile" 2>/dev/null \
+      && echo "==> swap on ($HERE/.swapfile)" \
+      || { echo "!! could not enable swap (continuing without it)"; rm -f "$HERE/.swapfile"; }
+  fi
+fi
+
 # 1. System packages (best-effort) ----------------------------------------
 if command -v apt-get >/dev/null 2>&1; then
   echo "==> apt packages"

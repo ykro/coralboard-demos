@@ -105,7 +105,8 @@ synap_cli_od -m /usr/share/synap/models/object_detection/coco/npu/model.synap im
 ## Gotchas
 - `/usr/local/bin` is **read-only**.
 - `/tmp` is a small tmpfs (RAM). Point `TMPDIR` at disk for pip (`setup_board.sh` does this).
-- 2 GB RAM -> add swap if anything compiles (`setup_board.sh` handles it).
+- 2 GB RAM -> tight if pip falls back to a source build; `setup_board.sh` adds a 2 GB `.swapfile`
+  (best-effort, only when no swap exists) to avoid an OOM.
 - Web port is **8090**; the board's `swupdate` service owns 8080.
 - A `kill -9` of a `synap_cli_*` process **mid-inference** wedges the NPU
   (`INTERNAL; failed to load HW resources`). Use a clean Ctrl-C; if wedged, kill leftover python/synap

@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 captures/
 .tmp/
+.swapfile
 
 # model weights - large; get them with models/fetch_models.sh
 models/*.gguf

@@ -42,6 +42,15 @@ from . import camera, config, vision_labels
 
 RESIDENT = os.environ.get("CORAL_SYNAP_RESIDENT", "0") == "1"
 
+# Printed by a demo loop after several consecutive inference failures, so a
+# beginner staring at a scroll of "(hiccup)" lines learns the likely cause + fix
+# instead of nothing. A wedged NPU is usually the aftermath of a kill -9 of a
+# synap_cli_* process mid-inference (see HARDWARE.md).
+NPU_WEDGE_HINT = (
+    "NPU looks wedged (commonly after a kill -9 of synap_cli mid-inference). Stop this demo "
+    "and clear it: pkill -f synap_cli; pkill -f run_board, then run again."
+)
+
 
 class VisionStream:
     def __init__(self, frame_path: str):
