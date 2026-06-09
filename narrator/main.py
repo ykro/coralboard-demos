@@ -124,6 +124,17 @@ def main():
     fps = synap_stream.Fps()
     interval = float(os.environ.get("CORAL_NARRATOR_INTERVAL", "0.1"))
 
+    # Warm the camera BEFORE the narration thread loads Gemma. The camera's
+    # first-frame warmup (the persistent GStreamer pipeline settling auto-exposure)
+    # is CPU-light but latency-sensitive; if it runs while Gemma's model load is
+    # saturating the core, the first frame is delayed ~20 s and the one-shot
+    # fallback can fail on the busy device. Establishing the pipeline now (CPU
+    # still free) means captures are fast by the time Gemma is loading.
+    try:
+        stream.capture()
+    except Exception as e:
+        print(f"(camera warmup hiccup) {type(e).__name__}: {e}")
+
     stop_evt = threading.Event()
     nt = threading.Thread(target=_narration_loop, args=(stop_evt, args.narrate_sec),
                           daemon=True)

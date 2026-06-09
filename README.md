@@ -129,8 +129,9 @@ flowchart LR
   and detect line crossings. Keep the scene to a few well-separated subjects — an 80-class SSD undercounts
   dense/overlapping subjects.
 - **`narrator`** runs vision and Gemma on separate threads; `run_board.sh` sets `CORAL_LLM_THREADS=1` for it
-  so generating a caption leaves a core free for the vision loop. Caption cadence is a few seconds (270M on
-  CPU ≈ 6.5 tok/s), not instant.
+  so generating a caption leaves a core free for the vision loop. It warms the camera before loading Gemma,
+  so the live video is up in a few seconds; the **first caption** then waits ~10-15 s for the model to load
+  on the CPU, and after that refreshes every few seconds (270M on CPU ≈ 6.5 tok/s) — not instant.
 
 ## Quickstart - laptop (mocked hardware, real models)
 
