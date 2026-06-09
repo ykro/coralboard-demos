@@ -3,6 +3,8 @@
 The Coralboard's "hello, world". The smallest demo that exercises every part of the board at once, so it
 also works as a bring-up self-test: run it first to confirm your board is alive.
 
+![hello_world web page: live camera frame with NPU detection boxes, the Gemma greeting, the per-subsystem self-test, LED/buzzer controls and the on-device chat](../docs/img/hello_world.jpg)
+
 ## What it does (one pass, then live)
 1. **Camera** - capture a frame from the OV5647 (`shared/camera.py`, GStreamer).
 2. **NPU classify** - `synap_cli_ic` (MobileNetV2 / ImageNet) names the scene (~33 ms inference).

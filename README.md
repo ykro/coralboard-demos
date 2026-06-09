@@ -36,6 +36,11 @@ to explore the UI and logic without hardware; use the board path for the real on
 See [`HARDWARE.md`](HARDWARE.md) for the verified board details (NPU models, LED/buzzer wiring, camera,
 board access) needed to reproduce these.
 
+![hello_world running on the board: the live OV5647 frame with NPU detection boxes (couch, potted plant), the Gemma 3 270M greeting, the per-subsystem self-test, LED/buzzer controls and the on-device chat](docs/img/hello_world.jpg)
+
+*The [`hello_world`](hello_world/) web page: live camera + NPU boxes, the on-device Gemma greeting, the
+self-test, and LED / buzzer / chat controls — all served from the board.*
+
 ## Prerequisites
 
 Install these on your computer first, then get the repo:
