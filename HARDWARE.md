@@ -4,6 +4,35 @@ Everything in this repo targets the **Synaptics Coralboard** (Astra **SL2619**) 
 shield and the OV5647 camera. This file documents what was verified on the board so you can reproduce
 the demos. Values were queried directly from the board.
 
+## Connecting the hardware
+
+**What the Sensor HAT brings** (all verified, see the I/O section below): the **RGB status LED**, the
+**active buzzer**, **2 microphones** (no speaker), the **user button**, and the **MIPI-CSI connector** for
+the **OV5647 camera**. The bare SL2619 board has the SoC, NPU, RAM, and USB; the HAT adds the camera +
+peripherals the demos use.
+
+Assemble in this order (physical orientation specifics — connector latch direction, header pin 1, which
+USB port — are not software-checkable; confirm them against the board silkscreen / vendor quickstart):
+
+1. **Seat the Sensor HAT** onto the board's expansion header. Align pin 1 and press down evenly so every
+   pin engages.
+2. **Connect the OV5647 camera** to the HAT's CSI connector with the flex ribbon: lift the connector
+   latch, slide the ribbon in fully with the metal contacts facing the right way, then close the latch.
+   This flex is the usual culprit for trouble — if frames come up **absent** (not just dark) after boot,
+   re-seat it.
+3. **Plug the board into your computer** with a USB cable. The board is headless and is both powered (if
+   it draws power over this port on your unit) and reached over USB — it enumerates as an **adb** device
+   and a **USB-network gadget** (`usb0` = 192.168.137.2). No monitor/keyboard needed.
+4. **Verify the link from the computer:**
+   ```bash
+   adb devices          # expect:  grinn-astra-2619-coral   device
+   adb shell uname -a   # sanity: you get a root shell on the board
+   ```
+   If `adb devices` is empty: replug the USB cable, check it's a data cable (not charge-only), and on
+   macOS confirm the device shows in System Information → USB.
+
+Once `adb devices` shows the board, jump to the README's **First run: test hello_world over USB**.
+
 ## SoC and NPU
 - **SoC:** Synaptics Astra **SL2619** (`syna,sl2619`, "Grinn AstraCORAL-2619"). 2x Cortex-A55 @ 2 GHz,
   ~1.9 GB RAM.

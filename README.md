@@ -76,18 +76,54 @@ exposes web controls (LED, buzzer, and an on-device **Gemma chat box**). It uses
 `run_laptop.sh` creates a `.venv` on first run. `--mock` fakes the camera/LED/buzzer and the NPU (it
 cycles plausible labels) but keeps **Gemma real** - the same GGUF that runs on the board.
 
-## Quickstart - board (real camera + real NPU)
+## First run: test hello_world over USB (real camera + real NPU)
 
-```bash
-./copy_to_board.sh              # git archive + adb push -> /home/root/coralboard-demos
-# then, on the board (adb shell):
-cd /home/root/coralboard-demos
-./setup_board.sh                # venv + Gemma wheel + GGUF + NPU sanity check
-./run_board.sh hello            # open http://<board-ip>:8090
-```
+Use this the first time you plug the board into your computer, to confirm the whole board works. Hardware
+hookup (camera + Sensor HAT + USB) is in [`HARDWARE.md`](HARDWARE.md) → **Connecting the hardware**.
 
-The board has no Wi-Fi; reach the web page over USB networking. To give the board internet for setup,
-run `./net_board_internet.sh` from the Mac (one command). Details in `HARDWARE.md`.
+1. **Confirm the board is connected:**
+   ```bash
+   adb devices                 # expect:  grinn-astra-2619-coral   device
+   ```
+   If it's empty, see HARDWARE.md (replug, data cable, etc.).
+
+2. **Copy the code to the board** (run from this repo on your computer):
+   ```bash
+   ./copy_to_board.sh          # git archive HEAD + adb push -> /home/root/coralboard-demos
+   ```
+   `copy_to_board.sh` ships `git archive HEAD`, so **commit first** or your edits won't go over.
+
+3. **Set up + run on the board** (over adb):
+   ```bash
+   adb shell
+   cd /home/root/coralboard-demos
+   ./setup_board.sh            # one-time: venv + Gemma wheel + GGUF + NPU sanity check
+   ./run_board.sh hello        # starts the demo; leave it running
+   ```
+   `setup_board.sh` needs internet for pip/the GGUF: from the Mac, run `./net_board_internet.sh` once
+   (it gives the board internet over USB), then re-run setup.
+
+4. **Open the web page from your computer.** The board has no Wi-Fi, so forward the port over adb (in a
+   second terminal on your computer):
+   ```bash
+   adb forward tcp:8090 tcp:8090
+   ```
+   Then open **http://localhost:8090**.
+
+**What you should see**
+- Console: one `[ok]`/`[!!]` line per subsystem (camera, NPU classify, NPU detect, Gemma), then a
+  one-line greeting. Startup is **silent** (no beep).
+- Web page: the live camera frame with green detection boxes, the detected scene/objects, the greeting,
+  and the per-subsystem status list. The **RGB LED** turns green when the first pass finishes. The buzzer
+  only sounds if you press the **Buzz** toggle yourself.
+- A `[!!]` line means that one subsystem degraded (e.g. camera unplugged) — the demo keeps running and the
+  line tells you what failed.
+
+**Stop it cleanly:** `Ctrl-C` in the run shell. Never `kill -9` a `synap_cli_*` mid-inference (it wedges
+the NPU). To redeploy code changes: `Ctrl-C`, `./copy_to_board.sh` (after committing), then `./run_board.sh hello` again.
+
+Prefer to try it without the board first? `./run_laptop.sh hello` runs the same demo with mocked hardware
+(real Gemma) — see the laptop quickstart above.
 
 ## Layout
 ```
