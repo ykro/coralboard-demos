@@ -224,6 +224,12 @@ Once `hello` confirms the board, the showcase demos run the same way — swap th
 line on the page; walk objects across it), `./run_board.sh narrator` (let it describe the scene). Same port
 8090, same `adb forward`, same clean `Ctrl-C` to stop.
 
+**One command from your computer:** `./run_on_board.sh reflex` does the whole board flow at once — checks the
+board over adb, forwards the web port, opens your browser, and runs the demo on the board in the foreground
+so `Ctrl-C` stops it cleanly. Add `--deploy` to copy the latest committed code over first, pass a port as a
+second arg, or run it with no demo name for a menu (`./run_on_board.sh`). This is the board counterpart of
+`./demo.sh` (which runs on the laptop).
+
 ## Layout
 ```
 shared/        camera, vision (NPU), synap_stream (live-vision seam), imagenet_buckets,
