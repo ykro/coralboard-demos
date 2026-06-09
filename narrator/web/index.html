@@ -60,9 +60,20 @@
 
   <script>
     const $ = id => document.getElementById(id);
+    // Swap the frame only once the new JPEG has decoded (no white flash), and
+    // skip a refresh if one is still loading so fast updates don't pile up.
+    let imgBusy = false;
+    function setPhoto(url) {
+      if (imgBusy) return;
+      imgBusy = true;
+      const n = new Image();
+      n.onload = () => { $('photo').src = n.src; imgBusy = false; };
+      n.onerror = () => { imgBusy = false; };
+      n.src = url + '?t=' + Date.now();
+    }
     function render(d) {
       if (!d || d.type !== 'narrator') return;
-      if (d.photo) $('photo').src = d.photo + '?t=' + Date.now();
+      if (d.photo) setPhoto(d.photo);
       const cap = $('caption');
       cap.textContent = d.caption || '';
       cap.classList.toggle('thinking', !!d.thinking);

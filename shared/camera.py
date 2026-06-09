@@ -306,26 +306,34 @@ def _csi_capture(out_path: str) -> str:
 
 # --- Mock path -------------------------------------------------------------
 
-_mock_i = 0
+_mock_done = set()
 
 
 def _mock_capture(out_path: str) -> str:
-    """Write a pleasant gradient placeholder JPEG (there is no camera on a laptop),
-    varying each call so the demo/screenshots look alive."""
+    """Write a pleasant gradient placeholder JPEG ONCE per path, then reuse it
+    (there is no camera on a laptop). It used to regenerate with a different
+    palette every call, but the demos capture at ~10-20 Hz, so that cycling
+    strobed the page; a stable background lets the live boxes/labels/LED carry
+    the motion instead. Each demo's frame still gets its own palette (picked from
+    its filename) so they don't all look identical."""
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    if out_path in _mock_done and os.path.exists(out_path):
+        return out_path                 # already generated; keep it stable (no flicker)
     if os.path.exists(_PLACEHOLDER):
         import shutil
 
         shutil.copyfile(_PLACEHOLDER, out_path)
+        _mock_done.add(out_path)
         return out_path
     try:
         from PIL import Image
 
-        global _mock_i
         palettes = [((108, 99, 255), (236, 180, 220)), ((78, 195, 242), (180, 240, 210)),
                     ((242, 138, 110), (250, 210, 150)), ((110, 200, 150), (230, 240, 160))]
-        top, bot = palettes[_mock_i % len(palettes)]
-        _mock_i += 1
+        # Deterministic palette per frame path, so different demos differ but a
+        # given demo's background never changes between frames.
+        pick = sum(ord(c) for c in os.path.basename(out_path)) % len(palettes)
+        top, bot = palettes[pick]
         w, h = 800, 600
         col = Image.new("RGB", (1, h))
         cpx = col.load()
@@ -335,6 +343,7 @@ def _mock_capture(out_path: str) -> str:
                          int(top[1] + (bot[1] - top[1]) * t),
                          int(top[2] + (bot[2] - top[2]) * t))
         col.resize((w, h)).save(out_path, "JPEG", quality=85)
+        _mock_done.add(out_path)
         return out_path
     except Exception:
         pass
@@ -354,4 +363,5 @@ def _mock_capture(out_path: str) -> str:
     )
     with open(out_path, "wb") as f:
         f.write(gray_jpeg)
+    _mock_done.add(out_path)
     return out_path

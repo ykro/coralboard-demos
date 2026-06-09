@@ -2,8 +2,11 @@
 #
 # demo.sh - pick and launch a Coralboard demo from a menu.
 #
-#   ./demo.sh                 # show the menu, pick a demo (runs on the laptop, mocked)
-#   ./demo.sh reflex          # launch one directly (skips the menu)
+# RUNS ON YOUR LAPTOP BY DEFAULT (mocked camera/LED/buzzer, real Gemma). Pass
+# --board to run on the real board instead.
+#
+#   ./demo.sh                 # show the menu, pick a demo (laptop, mocked hardware)
+#   ./demo.sh reflex          # launch one directly on the laptop (skips the menu)
 #   ./demo.sh narrator --backend template   # extra flags pass through
 #   ./demo.sh --board reflex  # run on the board (real hardware) instead of the laptop
 #
@@ -36,6 +39,9 @@ if [ -n "$DEMO" ]; then
   shift || true
 else
   echo "Coralboard demos - running on the $WHERE"
+  if [ "$RUNNER" = "run_laptop.sh" ]; then
+    echo "(default: your laptop, hardware mocked - pass --board for the real board)"
+  fi
   echo
   idx=0
   while [ "$idx" -lt "${#DEMOS[@]}" ]; do

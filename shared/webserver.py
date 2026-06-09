@@ -70,6 +70,22 @@ def publish(text, photo_path=None, mood="#111111", title=""):
     broadcast(payload)
 
 
+class _QuietHTTPServer(ThreadingHTTPServer):
+    """Like ThreadingHTTPServer, but a client that disconnects mid-request
+    (browser tab closed, EventSource reconnecting, curl timing out) is normal
+    here and must not spew a traceback. Swallow the connection-teardown errors
+    and let everything else print as usual."""
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        import sys
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionResetError, BrokenPipeError,
+                            ConnectionAbortedError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def serve(web_dir=None, host=None, port=None):
     """Start the server in a background thread. Returns the server instance."""
     global _WEB_DIR
@@ -77,7 +93,7 @@ def serve(web_dir=None, host=None, port=None):
         _WEB_DIR = web_dir
     host = host or config.WEB_HOST
     port = port or config.WEB_PORT
-    httpd = ThreadingHTTPServer((host, port), _Handler)
+    httpd = _QuietHTTPServer((host, port), _Handler)
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
     t.start()
     print(f"web up at http://{host}:{port} (open on your phone/laptop)")
