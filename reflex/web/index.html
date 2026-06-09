@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>reflex - Coralboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: #0e0f13; color: #e9e9ee;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100dvh; padding: 24px;
+    }
+    .card {
+      width: min(560px, 94vw);
+      background: #15171d; border: 1px solid #262a33; border-radius: 16px;
+      overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,.5);
+      transition: border-color .25s ease;
+    }
+    .frame { position: relative; width: 100%; aspect-ratio: 4/3; background: #000; }
+    .frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .verdict {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      padding: 26px 18px 12px;
+      background: linear-gradient(to top, rgba(0,0,0,.82), rgba(0,0,0,0));
+    }
+    .category { font-size: 30px; font-weight: 800; line-height: 1; text-transform: capitalize;
+                text-shadow: 0 2px 12px rgba(0,0,0,.6); }
+    .top1 { font-size: 14px; color: #c7ccd6; margin-top: 6px; }
+    .top1 b { color: #fff; }
+    .dotbig { display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+              margin-right: 8px; transform: translateY(1px); box-shadow: 0 0 12px var(--c); background: var(--c); }
+    .body { padding: 18px 20px 20px; }
+    .tag { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #7d8597; }
+    .bars { display: grid; gap: 6px; margin: 10px 0 4px; }
+    .bar { display: grid; grid-template-columns: 130px 1fr 42px; gap: 8px; align-items: center; font-size: 13px; }
+    .bar .lab { color: #c7ccd6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .track { height: 8px; background: #20242d; border-radius: 5px; overflow: hidden; }
+    .fill { height: 100%; background: #4a5670; border-radius: 5px; transition: width .15s ease; }
+    .pct { color: #8a91a0; text-align: right; font-variant-numeric: tabular-nums; }
+    .stats { display: flex; gap: 18px; margin-top: 14px; }
+    .stat .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .stat .l { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #7d8597; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; padding-top: 14px;
+              border-top: 1px solid #262a33; }
+    .leg { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9aa1b0; text-transform: capitalize; }
+    .leg .sw { width: 10px; height: 10px; border-radius: 50%; }
+    .leg.on { color: #fff; font-weight: 700; }
+    .foot { margin-top: 14px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+            color: #5a6072; display: flex; justify-content: space-between; }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="frame">
+      <img id="photo" alt="camera frame" />
+      <div class="verdict">
+        <div class="category" id="category"><span class="dotbig" id="dot" style="--c:#00ffff"></span><span id="catName">waiting...</span></div>
+        <div class="top1">top-1: <b id="label">-</b> <span id="conf"></span></div>
+      </div>
+    </div>
+    <div class="body">
+      <div class="tag">top-5 (mobilenetv2, imagenet)</div>
+      <div class="bars" id="bars"></div>
+      <div class="stats">
+        <div class="stat"><div class="n" id="inf">-</div><div class="l">NPU inf (ms)</div></div>
+        <div class="stat"><div class="n" id="fps">-</div><div class="l">frames / s</div></div>
+        <div class="stat"><div class="n" id="totalms">-</div><div class="l">total (ms)</div></div>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="foot"><span id="mode">-</span><span>Coralboard - SL2619 - Coral NPU</span></div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    function render(d) {
+      if (!d || d.type !== 'reflex') return;
+      if (d.photo) $('photo').src = d.photo + '?t=' + Date.now();
+      const color = d.stable_color || '#00ffff';
+      $('catName').textContent = d.stable_bucket || '-';
+      $('dot').style.setProperty('--c', color);
+      $('card').style.borderColor = color;
+      $('label').textContent = d.label || '-';
+      $('conf').textContent = d.confidence != null ? '(' + (d.confidence * 100).toFixed(0) + '%)' : '';
+
+      const bars = $('bars'); bars.innerHTML = '';
+      (d.items || []).forEach(it => {
+        const row = document.createElement('div'); row.className = 'bar';
+        row.innerHTML = `<div class="lab">${it.label}</div>` +
+          `<div class="track"><div class="fill" style="width:${(it.confidence*100).toFixed(0)}%"></div></div>` +
+          `<div class="pct">${(it.confidence*100).toFixed(0)}%</div>`;
+        bars.appendChild(row);
+      });
+      $('inf').textContent = d.inf_ms != null ? d.inf_ms.toFixed(0) : '-';
+      $('fps').textContent = d.fps != null ? d.fps.toFixed(1) : '-';
+      $('totalms').textContent = d.total_ms != null ? d.total_ms.toFixed(0) : '-';
+      $('mode').textContent = d.mode || '';
+
+      const legend = $('legend'); legend.innerHTML = '';
+      (d.buckets || []).forEach(b => {
+        const el = document.createElement('div');
+        el.className = 'leg' + (b.name === d.stable_bucket ? ' on' : '');
+        el.innerHTML = `<span class="sw" style="background:${b.color}"></span>${b.name}`;
+        legend.appendChild(el);
+      });
+    }
+    const es = new EventSource('/events');
+    es.onmessage = e => { try { render(JSON.parse(e.data)); } catch (_) {} };
+  </script>
+</body>
+</html>

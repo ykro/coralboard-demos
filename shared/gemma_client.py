@@ -1,5 +1,10 @@
 """Gemma 3 270M text generation.
 
+Thread budget: defaults to 2 (both A55 cores). Set CORAL_LLM_THREADS=1 to leave a
+core free for the NPU vision loop -- `narrator` does this so generating a caption
+doesn't stall the live video (docs/demos-plan.md notes detect slows 271->377 ms
+when both cores are pegged).
+
 Backend is chosen by config.BACKEND (NOT by the hardware MOCK flag), so the
 laptop `--mock` demo and the board run use the SAME real model:
 
@@ -13,6 +18,7 @@ speed/efficiency optimization, documented in models/README.md.
 Gemma 3 270M is text-only; vision is handled separately (see vision_labels).
 """
 
+import os
 import threading
 
 from . import config
@@ -67,7 +73,7 @@ def _ensure_llm():
         _llm = Llama(
             model_path=config.MODEL_PATH,
             n_ctx=2048,
-            n_threads=2,          # 2x Cortex-A55 on the board
+            n_threads=int(os.environ.get("CORAL_LLM_THREADS", "2")),  # 2x A55; 1 leaves a core for vision
             verbose=False,
             chat_format="gemma",
         )

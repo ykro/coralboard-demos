@@ -28,8 +28,8 @@ USB port — are not software-checkable; confirm them against the board silkscre
    adb devices          # expect:  grinn-astra-2619-coral   device
    adb shell uname -a   # sanity: you get a root shell on the board
    ```
-   If `adb devices` is empty: replug the USB cable, check it's a data cable (not charge-only), and on
-   macOS confirm the device shows in System Information → USB.
+   If `adb devices` is empty: replug the USB cable, check it's a data cable (not charge-only), and
+   confirm the device shows up in your computer's USB device list.
 
 Once `adb devices` shows the board, jump to the README's **First run: test hello_world over USB**.
 
@@ -91,8 +91,9 @@ synap_cli_od -m /usr/share/synap/models/object_detection/coco/npu/model.synap im
 
 ## Board access
 - **adb:** headless, root, no password. (`adb shell`, `adb push`.)
-- **Internet over USB (macOS):** board `usb0` = 192.168.137.2, Mac gadget iface = 192.168.137.1, upstream
-  = your Wi-Fi. Run `./net_board_internet.sh` from the Mac (one command; it configures both sides).
+- **Internet over USB:** board `usb0` = 192.168.137.2, the computer's USB-gadget iface = 192.168.137.1,
+  upstream = your Wi-Fi. Run `./net_board_internet.sh` from your computer (one command; it configures both
+  sides).
 - **Copy this repo to the board:** `./copy_to_board.sh` (uses `git archive` + `adb push`).
 
 ## Software stack (no torch)

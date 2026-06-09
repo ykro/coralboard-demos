@@ -11,6 +11,13 @@ runs on the CPU via llama.cpp.
 | Demo | What it shows | Uses |
 |------|---------------|------|
 | [`hello_world/`](hello_world/) | The board's "hello world" / bring-up self-test: camera, NPU classify + detect, RGB LED, buzzer, and a Gemma greeting, all in one run. | camera + NPU (both models) + LED + buzzer + Gemma + web |
+| [`reflex/`](reflex/) | **Reactive smart-camera.** Hold up an object → NPU classifies it in ~31 ms → the board reacts physically: the RGB LED changes color by category (food→green, animal→blue, vehicle→red, device→white, clothing→magenta, other→cyan) and the page shows the verdict + top-5 + live NPU latency. | camera + NPU classify + LED + web |
+| [`tripwire/`](tripwire/) | **Live crossing counter.** Draw a line on the page; the NPU detects COCO objects each frame and a CPU centroid tracker counts each object that crosses, per direction. | camera + NPU detect + web |
+| [`narrator/`](narrator/) | **Hybrid vision + LLM.** The NPU runs the vision continuously while Gemma 3 270M on the CPU narrates the scene in one plain sentence, refreshed every few seconds. | camera + NPU detect + Gemma + web |
+
+`hello_world` is the bring-up self-test; **`reflex` + `tripwire`** are the pure-NPU-vision showcase pair and
+**`narrator`** is the vision+LLM hybrid. The plan and per-demo design notes are in
+[`docs/demos-plan.md`](docs/demos-plan.md).
 
 See [`HARDWARE.md`](HARDWARE.md) for the verified board details (NPU models, LED/buzzer wiring, camera,
 board access) needed to reproduce these.
@@ -36,7 +43,7 @@ flowchart TB
       BTN["User button"]
     end
   end
-  Host["Mac / laptop<br/>browser + adb"]
+  Host["computer<br/>browser + adb"]
   CAM --> NPU
   NPU --> CPU
   CPU --> LED & BUZ
@@ -66,15 +73,45 @@ flowchart LR
 exposes web controls (LED, buzzer, and an on-device **Gemma chat box**). It uses `shared/`
 (camera, vision, Gemma client, LEDs/buzzer, web server, config).
 
+### The showcase demos
+
+The three showcase demos share one live-vision seam, `shared/synap_stream.py`: it grabs a frame and runs
+NPU inference per loop, returning parsed results + the JPEG to show. Today it uses the proven per-frame
+`synap_cli_*` shell-out (same path as `hello_world`); a resident-model GStreamer pipeline that keeps the
+NPU model loaded (classify ~31 ms / detect ~271 ms) is scaffolded behind `CORAL_SYNAP_RESIDENT=1` and
+falls back automatically until its caps are brought up on the board (see the module and `docs/demos-plan.md`).
+
+```mermaid
+flowchart LR
+  cam["camera frame"] --> vs["shared/synap_stream<br/>(NPU classify / detect)"]
+  vs --> reflex["reflex<br/>label → category bucket → LED color<br/>(hysteresis + majority vote)"]
+  vs --> trip["tripwire<br/>centroid tracker → line crossing count"]
+  vs --> narr["narrator<br/>labels → Gemma 270M (CPU) → caption"]
+  reflex & trip & narr --> web["live web page (SSE)"]
+```
+
+- **`reflex`** debounces the chattering top-1 with a majority vote over N frames + a confidence floor to
+  enter a new category (a dead band), so the LED only flips when a category is clearly, repeatedly winning.
+  ImageNet→category mapping is a static keyword table in `shared/imagenet_buckets.py`.
+- **`tripwire`** tracks centroids on the CPU between detections (`shared/tracker.py`) to assign stable IDs
+  and detect line crossings. Keep the scene to a few well-separated subjects — an 80-class SSD undercounts
+  dense/overlapping subjects.
+- **`narrator`** runs vision and Gemma on separate threads; `run_board.sh` sets `CORAL_LLM_THREADS=1` for it
+  so generating a caption leaves a core free for the vision loop. Caption cadence is a few seconds (270M on
+  CPU ≈ 6.5 tok/s), not instant.
+
 ## Quickstart - laptop (mocked hardware, real models)
 
 ```bash
-./models/fetch_models.sh        # one-time: download the Gemma 3 270M GGUF (~291 MB)
-./run_laptop.sh hello           # then open http://localhost:8090
+./models/fetch_models.sh                      # one-time: download the Gemma 3 270M GGUF (~291 MB)
+./run_laptop.sh hello                          # then open http://localhost:8090
+./run_laptop.sh reflex                         # or: reflex | tripwire | narrator
 ```
 
 `run_laptop.sh` creates a `.venv` on first run. `--mock` fakes the camera/LED/buzzer and the NPU (it
-cycles plausible labels) but keeps **Gemma real** - the same GGUF that runs on the board.
+cycles plausible labels/detections) but keeps **Gemma real** - the same GGUF that runs on the board.
+`reflex` and `tripwire` are pure NPU vision (no model needed in mock); `narrator` and `hello` use Gemma
+(add `--backend template` for a no-model run). Each demo serves its own page on the same port.
 
 ## First run: test hello_world over USB (real camera + real NPU)
 
@@ -100,7 +137,7 @@ hookup (camera + Sensor HAT + USB) is in [`HARDWARE.md`](HARDWARE.md) → **Conn
    ./setup_board.sh            # one-time: venv + Gemma wheel + GGUF + NPU sanity check
    ./run_board.sh hello        # starts the demo; leave it running
    ```
-   `setup_board.sh` needs internet for pip/the GGUF: from the Mac, run `./net_board_internet.sh` once
+   `setup_board.sh` needs internet for pip/the GGUF: from your computer, run `./net_board_internet.sh` once
    (it gives the board internet over USB), then re-run setup.
 
 4. **Open the web page from your computer.** The board has no Wi-Fi, so forward the port over adb (in a
@@ -125,12 +162,21 @@ the NPU). To redeploy code changes: `Ctrl-C`, `./copy_to_board.sh` (after commit
 Prefer to try it without the board first? `./run_laptop.sh hello` runs the same demo with mocked hardware
 (real Gemma) — see the laptop quickstart above.
 
+Once `hello` confirms the board, the showcase demos run the same way — swap the name:
+`./run_board.sh reflex` (hold objects to the camera; watch the LED), `./run_board.sh tripwire` (draw the
+line on the page; walk objects across it), `./run_board.sh narrator` (let it describe the scene). Same port
+8090, same `adb forward`, same clean `Ctrl-C` to stop.
+
 ## Layout
 ```
-shared/        camera, vision (NPU), Gemma client, LEDs/buzzer, web server, config
-hello_world/   the demo (main.py + web/)
+shared/        camera, vision (NPU), synap_stream (live-vision seam), imagenet_buckets,
+               tracker, Gemma client, LEDs/buzzer, web server, config
+hello_world/   bring-up self-test (main.py + web/)
+reflex/        reactive smart-camera (main.py + web/)
+tripwire/      live crossing counter (main.py + web/)
+narrator/      NPU vision + Gemma narration (main.py + web/)
 models/        fetch_models.sh (Gemma GGUF; weights are not in git)
-*.sh           run_laptop / setup_board / copy_to_board / net_board_internet
+*.sh           run_laptop / run_board / setup_board / copy_to_board / net_board_internet
 ```
 
 ## Notes

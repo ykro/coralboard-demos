@@ -1,7 +1,18 @@
-# Demos plan — NPU showcase (ready to implement)
+# Demos plan — NPU showcase
 
-Status: **planned, not started.** Demo lineup decided with the maintainer. `hello_world/` stays as the
-bring-up self-test; these are the three showcase demos.
+Status: **implemented (2026-06-09), pending board bring-up of the resident pipeline.** All three demos
+(`reflex/`, `tripwire/`, `narrator/`) are built and verified end-to-end in `--mock` on a laptop (web page
+served, SSE payloads correct, LED/tracker/narration logic exercised). They run on the board today via the
+proven per-frame `synap_cli_*` shell-out through `shared/synap_stream.py`; the resident GStreamer pipeline
+(the throughput win below) is scaffolded behind `CORAL_SYNAP_RESIDENT=1` with automatic fallback and still
+needs its `synapimageproc→synapinfer` caps brought up on real hardware (see "Pending" at the bottom and
+`shared/synap_stream.py`). Demo lineup decided with the maintainer. `hello_world/` stays as the bring-up
+self-test; these are the three showcase demos.
+
+What landed: `shared/synap_stream.py` (live-vision seam + resident scaffold + Fps), `shared/imagenet_buckets.py`
+(static label→category→LED-color table), `shared/tracker.py` (centroid tracker + line crossing), the three
+`*/main.py` + `*/web/index.html`, `CORAL_LLM_THREADS` in `gemma_client.py`, and `reflex`/`tripwire`/`narrator`
+wired into `run_laptop.sh` / `run_board.sh`.
 
 ## The three demos (names)
 
@@ -95,12 +106,20 @@ needs `synapimageproc` upstream; no example pipelines ship on the board).
   periodically (or cap Gemma to 1 thread) to limit the CPU-contention hitch on vision.
 - **Feasibility:** works if the few-seconds caption cadence is acceptable (maintainer's condition).
 
-## Pending before/while implementing
+## Pending / resolved
 
-- Resolve the exact `synapimageproc → synapinfer → appsink` pipeline recipe on the board (the one real
-  unknown; smoke test showed `synapinfer` loads the model + negotiates RGB caps but needs `synapimageproc`
-  upstream, and no example pipelines ship on the board).
-- Confirm grouping: `reflex` + `tripwire` as two demos vs one combined.
-- For `tripwire`: keep the scene to a few well-separated subjects near the camera — SSD-MobileNet
+- **[OPEN — board only]** Resolve the exact `synapimageproc → synapinfer → appsink` pipeline recipe on the
+  board (the one real unknown; smoke test showed `synapinfer` loads the model + negotiates RGB caps but needs
+  `synapimageproc` upstream, and no example pipelines ship on the board). Until then the demos use the
+  per-frame `synap_cli_*` shell-out (works, just pays the model reload per call). Bring-up TODO lives in
+  `shared/synap_stream.py::_ResidentPipeline`; flip `CORAL_SYNAP_RESIDENT=1` to exercise it.
+- **[RESOLVED]** Grouping: built as **two separate demos** (`reflex` + `tripwire`) plus `narrator`, per the
+  plan's default. Merge only if the maintainer later wants a single combined vision demo.
+- **[CARRIED INTO `tripwire`]** Keep the scene to a few well-separated subjects near the camera — SSD-MobileNet
   undercounts dense/overlapping/small people (true crowd counting needs density-regression models like
-  CSRNet, which we can't run; an 80-class SSD is off-paradigm for crowds but fine for sparse crossings).
+  CSRNet, which we can't run; an 80-class SSD is off-paradigm for crowds but fine for sparse crossings). The
+  web page hint and the demo docstring both say this.
+- **[BOARD CHECK]** Verify on hardware: real ImageNet labels bucket sensibly (the keyword table in
+  `imagenet_buckets.py` was tuned against the readable label strings, not the live `info.json`), the LED
+  colors read clearly on the on/off RGB LED, and the `narrator` caption cadence + vision smoothness hold with
+  `CORAL_LLM_THREADS=1`.
