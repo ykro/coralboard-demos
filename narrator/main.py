@@ -68,10 +68,11 @@ def _narration_loop(stop_evt, period):
     while not stop_evt.is_set():
         with _lock:
             labels = list(_state["labels"])
+            caption_now = _state["caption"]
         key = tuple(sorted(labels))
         # Re-narrate on a timer, but skip if the scene is identical to last time
         # (saves a CPU-heavy generation when nothing changed).
-        if key != last_key or _state["caption"] == "Looking around...":
+        if key != last_key or caption_now == "Looking around...":
             with _lock:
                 _state["thinking"] = True
             t0 = time.monotonic()

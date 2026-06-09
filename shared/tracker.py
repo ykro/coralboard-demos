@@ -13,6 +13,7 @@ plenty.
 """
 
 import math
+import threading
 
 
 def _dist(a, b):
@@ -56,18 +57,34 @@ class LineCounter:
         self.count_ab = 0       # crossings from the a-side to the b-side
         self.count_ba = 0       # the other way
         self.last_event = None  # {"id", "label", "dir"} of the most recent crossing
+        # update() runs on the demo's main loop; set_line()/reset() are called from
+        # the web server's request-handler thread. Serialize all state changes so a
+        # line drag never iterates self.tracks while update() is mutating it.
+        self._lock = threading.Lock()
 
     def set_line(self, line):
-        self.a, self.b = line
-        # Re-seat every track's remembered side against the new line so moving the
-        # line doesn't fire a phantom crossing on the next update.
-        for t in self.tracks.values():
-            t.side = _sign(_side((t.cx, t.cy), self.a, self.b))
-            t.counted = False
+        with self._lock:
+            self.a, self.b = line
+            # Re-seat every track's remembered side against the new line so moving
+            # the line doesn't fire a phantom crossing on the next update.
+            for t in self.tracks.values():
+                t.side = _sign(_side((t.cx, t.cy), self.a, self.b))
+                t.counted = False
+
+    def reset(self):
+        """Zero the tally (web 'Reset' button). Tracks are kept; only the counts
+        and the last event are cleared."""
+        with self._lock:
+            self.count = self.count_ab = self.count_ba = 0
+            self.last_event = None
 
     def update(self, detections):
         """Feed the current frame's detections (each a dict with cx, cy and a
         label/label_en). Returns the list of crossing events fired THIS frame."""
+        with self._lock:
+            return self._update_locked(detections)
+
+    def _update_locked(self, detections):
         dets = [(d.get("cx"), d.get("cy"), d.get("label_en") or d.get("label") or "obj")
                 for d in detections if d.get("cx") is not None]
 
@@ -132,14 +149,16 @@ class LineCounter:
         return ev
 
     def state(self):
-        """Snapshot for the web payload."""
-        return {
-            "count": self.count, "count_ab": self.count_ab, "count_ba": self.count_ba,
-            "tracks": [{"id": t.id, "cx": round(t.cx, 4), "cy": round(t.cy, 4),
-                        "label": t.label} for t in self.tracks.values()],
-            "line": [list(self.a), list(self.b)],
-            "last_event": self.last_event,
-        }
+        """Snapshot for the web payload (consistent under a concurrent line drag
+        or reset on the handler thread)."""
+        with self._lock:
+            return {
+                "count": self.count, "count_ab": self.count_ab, "count_ba": self.count_ba,
+                "tracks": [{"id": t.id, "cx": round(t.cx, 4), "cy": round(t.cy, 4),
+                            "label": t.label} for t in self.tracks.values()],
+                "line": [list(self.a), list(self.b)],
+                "last_event": self.last_event,
+            }
 
 
 def _sign(x, eps=1e-9):

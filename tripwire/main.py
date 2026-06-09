@@ -72,8 +72,7 @@ def main():
             except (KeyError, ValueError):
                 return {"ok": False}
         elif do == "reset":   # zero the tally
-            counter.count = counter.count_ab = counter.count_ba = 0
-            counter.last_event = None
+            counter.reset()
         return {"count": counter.count}
     webserver.set_action_handler(_on_action)
 
