@@ -113,6 +113,8 @@ cycles plausible labels/detections) but keeps **Gemma real** - the same GGUF tha
 `reflex` and `tripwire` are pure NPU vision (no model needed in mock); `narrator` and `hello` use Gemma
 (add `--backend template` for a no-model run). Each demo serves its own page on the same port.
 
+Or pick from a menu with `./demo.sh` (add `--board` to run on real hardware: `./demo.sh --board reflex`).
+
 ## First run: test hello_world over USB (real camera + real NPU)
 
 Use this the first time you plug the board into your computer, to confirm the whole board works. Hardware
