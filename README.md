@@ -4,9 +4,23 @@ Self-contained demos for the **Synaptics Coralboard** (Astra SL2619 + Coral NPU 
 show what the board's NPU can do on-device, with nothing but the board, its Sensor HAT shield, and the
 OV5647 camera. No cloud, no torch.
 
-The demo runs on a laptop with `--mock` (so you can read the output and the web UI without the board),
-and on the board for real. Vision runs on the NPU via the two preinstalled SyNAP models; Gemma 3 270M
-runs on the CPU via llama.cpp.
+Vision runs on the NPU via the two preinstalled SyNAP models; Gemma 3 270M runs on the CPU via llama.cpp.
+
+## Two ways to run — laptop vs board
+
+Every demo runs in one of two places, and **the laptop (mocked) path is the default**:
+
+| | **Laptop (default)** | **Board (real hardware)** |
+|---|---|---|
+| Command | `./run_laptop.sh <demo>` or `./demo.sh` | `./run_board.sh <demo>` or `./demo.sh --board <demo>` |
+| Hardware | camera/LED/buzzer **mocked** (synthetic frames + labels) | real OV5647 camera, NPU, RGB LED, buzzer |
+| Gemma | **real** (the same GGUF the board uses) | real (on the A55 CPU) |
+| Needs the board? | **No** — try the demos with zero hardware | Yes, over USB (`adb`) |
+
+`./demo.sh` (no args) shows a menu and runs on the **laptop** unless you pass `--board`. Use the laptop path
+to explore the UI and logic without hardware; use the board path for the real on-device demo. A beginner
+**with the board** should still run the laptop path once first (it needs no setup), then follow
+**First run: test hello_world over USB** below.
 
 | Demo | What it shows | Uses |
 |------|---------------|------|
