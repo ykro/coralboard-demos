@@ -52,19 +52,27 @@ def _brighten(path):
     this function tried to rescue them with a big gamma lift + gray-world WB +
     autocontrast, which only amplified the noise floor into coloured 'static'.
 
-    So this is now just a GENTLE gamma to open the shadows a touch; WB / gain /
-    contrast / denoise default OFF (the sensor handles colour + exposure, and a
-    clean frame needs no denoise). All still available via env for tricky rooms.
-    Best-effort: a no-op if PIL is missing so capture never crashes.
+    So this is a GENTLE gamma to open the shadows plus a small autocontrast
+    (black/white-point stretch). The sensor's auto-exposure is on, but its AGC
+    does NOT raise analogue_gain in a dim room (it sits at ~min while exposure
+    maxes out), so the raw frame comes out dark (mean ~47/255 here). A 1%
+    autocontrast stretch is adaptive and cheap: in a dim room it lifts the frame
+    to a normal brightness (mean ~47 -> ~88), and in a well-lit room it barely
+    changes anything (the histogram already spans 0-255). It stretches REAL
+    signal, not noise, because AE keeps the frame off the noise floor. WB / extra
+    gain / denoise stay OFF by default. Best-effort: a no-op if PIL is missing so
+    capture never crashes.
 
     Tune: CORAL_CAM_GAMMA (lower=brighter shadows, default 0.6; >=1 disables),
-    CORAL_CAM_BRIGHTEN (extra gain, default 1.0=off), CORAL_CAM_WB (software
-    gray-world WB 1/0, default 0 - sensor AWB is on), CORAL_CAM_CONTRAST
-    (autocontrast cutoff %, default 0=off), CORAL_CAM_DENOISE (1/0, default 0)."""
+    CORAL_CAM_CONTRAST (autocontrast cutoff %, default 1; 0 disables - raise for a
+    very dim room, e.g. 2), CORAL_CAM_BRIGHTEN (extra gain, default 1.0=off),
+    CORAL_CAM_WB (software gray-world WB 1/0, default 0 - sensor AWB is on),
+    CORAL_CAM_DENOISE (1/0, default 0). For a truly dark room also try manual
+    sensor gain: CORAL_CAM_AGC=0 CORAL_CAM_GAIN=512 (see _configure_sensor)."""
     gamma = float(os.environ.get("CORAL_CAM_GAMMA", "0.6"))
     gain = float(os.environ.get("CORAL_CAM_BRIGHTEN", "1.0"))
     wb = os.environ.get("CORAL_CAM_WB", "0") == "1"
-    cutoff = float(os.environ.get("CORAL_CAM_CONTRAST", "0"))
+    cutoff = float(os.environ.get("CORAL_CAM_CONTRAST", "1"))
     denoise = os.environ.get("CORAL_CAM_DENOISE", "0") == "1"
     if gamma >= 1.0 and gain == 1.0 and not wb and cutoff == 0 and not denoise:
         return
