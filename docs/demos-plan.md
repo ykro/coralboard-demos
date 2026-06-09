@@ -54,13 +54,22 @@ needs `synapimageproc` upstream; no example pipelines ship on the board).
   The instant physical reaction makes the speed visceral (not a number readout — that was the retired
   `npu_live`).
 - **Build:** MobileNetV2 via the resident pipeline → top-1 → category bucket → `shared/leds.py` color.
-- **Needs (from the in-progress deep-research):**
-  - **ImageNet-1000 → small category buckets** (food / animal / vehicle / electronic / container / …) via
-    the WordNet synset hierarchy. Labels are the standard 1000 synsets (`info.json["labels"]`, e.g.
-    `'tench, Tinca tinca'`).
-  - **Temporal smoothing** so top-1 doesn't flicker frame-to-frame (majority vote / hysteresis over a few
-    frames before changing the LED).
-- **Feasibility:** high — the fast path. Lowest-risk, most "NPU power" of the three.
+- **ImageNet-1000 → small category buckets** (researched): do **not** derive from raw WordNet — it's
+  unbalanced (the dog subtree is ~25× the cat subtree) and needs calibration. **Copy a curated mapping:**
+  - **Tsipras et al., NeurIPS 2020** ([arXiv:2005.11295](https://arxiv.org/pdf/2005.11295)) — 11 superclasses
+    covering all 1000: Dogs (130), Other mammals (88), Bird (59), Reptiles/fish/amphibians (60),
+    Invertebrates (61), Food/plants/fungi (63), Devices (172), Structures/furnishing (90), Clothes/covering
+    (92), Implements/containers/misc (117), Vehicles (68).
+  - or MadryLab **`robustness`** `common_superclass_wnid()` ready-made sets — `mixed_10`
+    (Dog/Bird/Insect/Monkey/Car/Cat/Truck/Fruit/Fungus/Boat), `big_12`, etc.
+  - For the demo pick ~5-6 buckets → LED colors (a static `class_index → bucket → color` table baked at
+    build time; no runtime hierarchy logic).
+- **Anti-flicker (researched):** top-1 chatters because >20% of ImageNet images contain multiple objects.
+  Mitigate with (a) **hysteresis** — two asymmetric confidence thresholds + a dead band so the LED only
+  changes when a new class is *clearly* winning, and (b) **majority vote** over the last N frames; plus the
+  stage framing "hold one centered object against a plain background."
+- **Feasibility:** high — the fast path. Lowest-risk, most "NPU power" of the three (research confirms D is
+  lower-risk than detection-based counting).
 
 ## `tripwire` (A1) — live crossing counter
 
@@ -88,8 +97,10 @@ needs `synapimageproc` upstream; no example pipelines ship on the board).
 
 ## Pending before/while implementing
 
-- **Deep-research in progress** on `reflex` (ImageNet→category bucketing, label smoothing, smart-sorter
-  references) and `tripwire`/people-counting limits — fold its findings into the `reflex` section when it
-  lands.
-- Resolve the exact `synapimageproc → synapinfer → appsink` pipeline recipe on the board.
+- Resolve the exact `synapimageproc → synapinfer → appsink` pipeline recipe on the board (the one real
+  unknown; smoke test showed `synapinfer` loads the model + negotiates RGB caps but needs `synapimageproc`
+  upstream, and no example pipelines ship on the board).
 - Confirm grouping: `reflex` + `tripwire` as two demos vs one combined.
+- For `tripwire`: keep the scene to a few well-separated subjects near the camera — SSD-MobileNet
+  undercounts dense/overlapping/small people (true crowd counting needs density-regression models like
+  CSRNet, which we can't run; an 80-class SSD is off-paradigm for crowds but fine for sparse crossings).
