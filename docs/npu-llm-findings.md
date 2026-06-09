@@ -73,6 +73,7 @@ runtime must be the same build), convert `token_embeddings.npy` to **bf16** (the
 model's embedding input is bf16), and run via the `GemmaTorq` runner from
 `synaptics-astra-demos/sl2610-examples` (`utils/gemma`, `utils/inference`).
 
-This is exactly what the `npu_chat/` demo packages — kept as a showcase that the
-board *can* run an LLM on its NPU, even though the CPU path (`hello_world/`) is
-faster for generation.
+The reusable runtime glue for this path lives in `shared/torq_gemma/` (loads a
+compiled `.vmfb` and runs it via `torq.runtime`). It has no demo wired to it
+today — kept as a working reference that the board *can* run an LLM on its NPU,
+even though the CPU path (`hello_world/`) is faster for generation.

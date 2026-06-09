@@ -19,7 +19,7 @@ synap_cli_ic -m /usr/share/synap/models/image_classification/mobilenetv2/npu/mod
 - MobileNetV2, **1000 ImageNet classes**. Labels in the model dir's `info.json` (`["labels"][class_index]`).
 - Output: `{"items":[{"class_index","confidence"}], "success":true}` plus a line
   `Classification time: T ms (pre:P, inf:I, post:O)`. **inf** is the pure NPU compute (~33 ms);
-  preprocessing adds ~30 ms. This is the fast path -> the `npu_live` demo.
+  preprocessing adds ~30 ms. This is the NPU's fast path.
 
 ### NPU model 2 - object detection
 ```

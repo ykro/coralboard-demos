@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Run a demo on the LAPTOP: mocked hardware + REAL Gemma (the same GGUF the board uses).
 #   ./run_laptop.sh hello
-#   ./run_laptop.sh npu
 set -e
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; cd "$HERE"
 if [ ! -d .venv ]; then
@@ -12,8 +11,7 @@ if [ ! -d .venv ]; then
 fi
 case "${1:-hello}" in
   hello) MOD=hello_world.main ;;
-  npu)   MOD=npu_live.main ;;
-  *) echo "usage: ./run_laptop.sh [hello|npu] [args...]"; exit 1 ;;
+  *) echo "usage: ./run_laptop.sh [hello] [args...]"; exit 1 ;;
 esac
 shift || true
 CORAL_MOCK=1 CORAL_BACKEND=gguf ./.venv/bin/python -m "$MOD" --mock "$@"

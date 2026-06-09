@@ -163,7 +163,7 @@ def object_detect(image_path: str, min_conf: float = 0.35, max_items: int = 10):
     )
 
 
-# --- Top-k classification with confidences + NPU timing (npu_live demo) -----
+# --- Top-k classification with confidences + NPU timing ---------------------
 # synap_cli_ic prints e.g.:
 #   Classification time: 65.55 ms (pre:31.98, inf:33.47, post:0.09)
 #   { "items": [ {"class_index": 916, "confidence": 0.80}, ... ], "success": true }

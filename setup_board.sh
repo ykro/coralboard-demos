@@ -41,7 +41,7 @@ python3 -m venv --system-site-packages .venv
 if command -v synap_cli_ic >/dev/null 2>&1; then
   echo "==> NPU classification (synap_cli_ic) available"
 else
-  echo "!! synap_cli_ic not found - npu_live and hello_world vision need the board's NPU"
+  echo "!! synap_cli_ic not found - hello_world vision needs the board's NPU"
 fi
 command -v synap_cli_od >/dev/null 2>&1 && echo "==> NPU detection (synap_cli_od) available" \
   || echo "!! synap_cli_od not found - hello_world detection step will degrade"
@@ -53,25 +53,8 @@ if [ ! -f models/gemma-3-270m-Q8_0.gguf ]; then
 fi
 echo "==> Gemma GGUF present"
 
-# 5. Board run wrapper -----------------------------------------------------
-cat > run_board.sh <<'EOF'
-#!/usr/bin/env bash
-# Run a demo on the board: REAL peripherals + REAL NPU + REAL Gemma (CPU/GGUF).
-#   ./run_board.sh hello
-#   ./run_board.sh npu
-set -e
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; cd "$HERE"
-case "${1:-hello}" in
-  hello) MOD=hello_world.main ;;
-  npu)   MOD=npu_live.main ;;
-  *) echo "usage: ./run_board.sh [hello|npu] [args...]"; exit 1 ;;
-esac
-shift || true
-CORAL_MOCK=0 CORAL_BACKEND=gguf ./.venv/bin/python -m "$MOD" "$@"
-EOF
-chmod +x run_board.sh
+# run_board.sh ships with the repo (tracked), so there's nothing to generate here.
 
 echo
 echo "==> done"
 echo "   Try:  ./run_board.sh hello      (open http://<board-ip>:8090)"
-echo "   Or:   ./run_board.sh npu        (live NPU classification)"

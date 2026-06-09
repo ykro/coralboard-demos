@@ -3,12 +3,11 @@
 __pycache__/
 *.pyc
 captures/
-run_board.sh
 .tmp/
 
 # model weights - large; get them with models/fetch_models.sh
 models/*.gguf
-# NPU (Torq) demo: compiled model + runtime venv + wheels are large / built locally
+# Torq NPU runtime (shared/torq_gemma): compiled model + runtime venv + wheels are large / built locally
 models/npu_gemma/
 .venv-npu/
-npu_chat/wheelhouse/
+torq_wheelhouse/

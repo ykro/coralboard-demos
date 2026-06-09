@@ -1,18 +1,16 @@
 # coralboard-demos
 
-Two self-contained demos for the **Synaptics Coralboard** (Astra SL2619 + Coral NPU "TORQ"), built to
+Self-contained demos for the **Synaptics Coralboard** (Astra SL2619 + Coral NPU "TORQ"), built to
 show what the board's NPU can do on-device, with nothing but the board, its Sensor HAT shield, and the
 OV5647 camera. No cloud, no torch.
 
-Both demos run on a laptop with `--mock` (so you can read the output and the web UI without the board),
+The demo runs on a laptop with `--mock` (so you can read the output and the web UI without the board),
 and on the board for real. Vision runs on the NPU via the two preinstalled SyNAP models; Gemma 3 270M
 runs on the CPU via llama.cpp.
 
 | Demo | What it shows | Uses |
 |------|---------------|------|
 | [`hello_world/`](hello_world/) | The board's "hello world" / bring-up self-test: camera, NPU classify + detect, RGB LED, buzzer, and a Gemma greeting, all in one run. | camera + NPU (both models) + LED + buzzer + Gemma + web |
-| [`npu_live/`](npu_live/) | The NPU's speed, live: continuous classification with the real measured inference latency (ms), the achieved fps, and top-5 confidence bars that react as you move an object. | camera + NPU (classification) + web |
-| [`npu_chat/`](npu_chat/) | Gemma 3 270M running **on the Coral NPU** (compiled bf16 `.vmfb` via Torq), with real tok/s shown per reply. Board-only. NOTE: the NPU is *not* faster than the CPU for this — see [`docs/npu-llm-findings.md`](docs/npu-llm-findings.md). | NPU (Gemma LLM) + web |
 
 See [`HARDWARE.md`](HARDWARE.md) for the verified board details (NPU models, LED/buzzer wiring, camera,
 board access) needed to reproduce these.
@@ -49,7 +47,7 @@ flowchart TB
 Hard constraint: the NPU runs **only the 2 preinstalled SyNAP models** (no SL2619 target in the toolkit),
 so a demo's value comes from **speed + locality + combining the NPU with on-CPU Gemma**, not a custom model.
 
-### The demos
+### The demo
 
 ```mermaid
 flowchart LR
@@ -62,18 +60,10 @@ flowchart LR
     h5 -. "refresh every ~2.5s" .-> h1
     web1["web controls: LED / buzz toggle /<br/>scene-grounded Gemma chat (/action)"] --> h4
   end
-  subgraph N["npu_live (continuous loop)"]
-    direction TB
-    n1["camera frame"] --> n2["NPU classify (synap_cli_ic)"]
-    n2 --> n3["read real inf: latency<br/>compute fps"]
-    n3 --> n4["web: ms + fps + top-5 bars"]
-    n4 -. "next frame" .-> n1
-  end
 ```
 
 `hello_world` exercises every subsystem once (bring-up self-test), then keeps the camera frame live and
-exposes web controls (LED, buzzer, and an on-device **Gemma chat box**). `npu_live` is a tight
-classify-every-frame loop that surfaces the NPU's measured latency and fps. Both share `shared/`
+exposes web controls (LED, buzzer, and an on-device **Gemma chat box**). It uses `shared/`
 (camera, vision, Gemma client, LEDs/buzzer, web server, config).
 
 ## Quickstart - laptop (mocked hardware, real models)
@@ -81,7 +71,6 @@ classify-every-frame loop that surfaces the NPU's measured latency and fps. Both
 ```bash
 ./models/fetch_models.sh        # one-time: download the Gemma 3 270M GGUF (~291 MB)
 ./run_laptop.sh hello           # then open http://localhost:8090
-./run_laptop.sh npu             # then open http://localhost:8090
 ```
 
 `run_laptop.sh` creates a `.venv` on first run. `--mock` fakes the camera/LED/buzzer and the NPU (it
@@ -95,7 +84,6 @@ cycles plausible labels) but keeps **Gemma real** - the same GGUF that runs on t
 cd /home/root/coralboard-demos
 ./setup_board.sh                # venv + Gemma wheel + GGUF + NPU sanity check
 ./run_board.sh hello            # open http://<board-ip>:8090
-./run_board.sh npu
 ```
 
 The board has no Wi-Fi; reach the web page over USB networking. To give the board internet for setup,
@@ -104,8 +92,7 @@ run `./net_board_internet.sh` from the Mac (one command). Details in `HARDWARE.m
 ## Layout
 ```
 shared/        camera, vision (NPU), Gemma client, LEDs/buzzer, web server, config
-hello_world/   demo 1 (main.py + web/)
-npu_live/      demo 2 (main.py + web/)
+hello_world/   the demo (main.py + web/)
 models/        fetch_models.sh (Gemma GGUF; weights are not in git)
 *.sh           run_laptop / setup_board / copy_to_board / net_board_internet
 ```

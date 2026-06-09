@@ -68,4 +68,4 @@ latches its last value), Gemma 3 270M on the A55 cores. See `../HARDWARE.md`.
   (extra gain, default `1.0`=off), `CORAL_CAM_WB` (software gray-world WB, default `0`), `CORAL_CAM_CONTRAST`
   (autocontrast cutoff %, default `0`=off), `CORAL_CAM_DENOISE` (default `0`), `CORAL_CAM_STACK`
   (frame-average N for a static dark scene, default `1`=off), `CORAL_CAM_JPEG_Q` (capture quality, `92`).
-  Applied in `shared/camera.py`, so it also affects `npu_live`.
+  Applied in `shared/camera.py`.

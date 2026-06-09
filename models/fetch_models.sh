@@ -6,7 +6,6 @@
 #   ./models/fetch_models.sh
 #
 # Vision needs NO download: it runs on the NPU via the preinstalled SyNAP models.
-# npu_live needs no weights at all.
 #
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
