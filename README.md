@@ -133,6 +133,23 @@ flowchart LR
   so the live video is up in a few seconds; the **first caption** then waits ~10-15 s for the model to load
   on the CPU, and after that refreshes every few seconds (270M on CPU ≈ 6.5 tok/s) — not instant.
 
+### Gemma 3 270M on the CPU: what to expect (and its limits)
+
+Gemma 3 270M is a **270-million-parameter** model running on the board's two Cortex-A55 cores via
+llama.cpp — chosen because it fits in RAM and runs fully on-device, **not** because it's capable. Expect:
+
+- **It is slow on this CPU (~6.5 tokens/second).** So in **`narrator`**: the live video (NPU) is smooth, but
+  the *caption* is text generation on the CPU. The **first caption takes ~10-15 s** (the model has to load),
+  and each refresh after that takes **~3-5 s** for a one-sentence caption. The caption therefore **lags the
+  video by a few seconds and only updates every few seconds** — this is the model being slow, not a hang or a
+  bug. Detection also drops from ~3.7 fps toward ~2.6 fps while Gemma is generating (both A55 cores busy).
+- **The chat (in `hello_world`) is very limited.** A 270M model often **answers in English even when asked in
+  Spanish**, **repeats itself** on open-ended questions, and **makes things up** — e.g. it may emit a
+  placeholder like `123 Main Street, Anytown, USA` when it has nothing real to say. That's why the chat is
+  **grounded in what the camera/NPU currently sees** ("what do you see?" answers concretely) and the code
+  guards/retries the worst misfires. Treat it as a *demo that an LLM can run on-device*, not a useful
+  assistant. For better text quality you would run a larger model off-device — out of scope here.
+
 ## Quickstart - laptop (mocked hardware, real models)
 
 ```bash
