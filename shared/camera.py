@@ -63,18 +63,31 @@ def _brighten(path):
     gain / denoise stay OFF by default. Best-effort: a no-op if PIL is missing so
     capture never crashes.
 
-    Tune: CORAL_CAM_GAMMA (lower=brighter shadows, default 0.6; >=1 disables),
-    CORAL_CAM_CONTRAST (autocontrast cutoff %, default 1; 0 disables - raise for a
-    very dim room, e.g. 2), CORAL_CAM_BRIGHTEN (extra gain, default 1.0=off),
-    CORAL_CAM_WB (software gray-world WB 1/0, default 0 - sensor AWB is on),
-    CORAL_CAM_DENOISE (1/0, default 0). For a truly dark room also try manual
-    sensor gain: CORAL_CAM_AGC=0 CORAL_CAM_GAIN=512 (see _configure_sensor)."""
-    gamma = float(os.environ.get("CORAL_CAM_GAMMA", "0.6"))
+    The OV5647's auto-gain (AGC) does NOT raise analogue_gain on this board (it
+    sits near min while exposure maxes), so even a NORMALLY-LIT room comes out
+    underexposed (~47-75/255). So the key step is an ADAPTIVE auto-level: after
+    the gamma + autocontrast, scale the frame's mean luminance toward a target.
+    It is adaptive - a dim frame gets boosted toward the target, an already-bright
+    frame is left alone - and the boost is capped so it can't blow noise up. This
+    is what makes a normal room look normal on the board.
+
+    Tune: CORAL_CAM_TARGET (target mean luminance 0-255, default 110; 0 disables
+    the auto-level), CORAL_CAM_MAXGAIN (cap on the auto-level boost, default 2.4),
+    CORAL_CAM_GAMMA (lower=brighter shadows, default 0.55; >=1 disables),
+    CORAL_CAM_CONTRAST (autocontrast cutoff %, default 1; 0 disables),
+    CORAL_CAM_BRIGHTEN (extra fixed gain, default 1.0=off), CORAL_CAM_WB (software
+    gray-world WB 1/0, default 0 - sensor AWB is on), CORAL_CAM_DENOISE (1/0,
+    default 0). For a still-dark room raise CORAL_CAM_TARGET (e.g. 130) or set a
+    manual sensor gain CORAL_CAM_AGC=0 CORAL_CAM_GAIN=600 (see _configure_sensor)."""
+    gamma = float(os.environ.get("CORAL_CAM_GAMMA", "0.55"))
     gain = float(os.environ.get("CORAL_CAM_BRIGHTEN", "1.0"))
     wb = os.environ.get("CORAL_CAM_WB", "0") == "1"
     cutoff = float(os.environ.get("CORAL_CAM_CONTRAST", "1"))
+    target = float(os.environ.get("CORAL_CAM_TARGET", "110"))
+    maxgain = float(os.environ.get("CORAL_CAM_MAXGAIN", "2.4"))
     denoise = os.environ.get("CORAL_CAM_DENOISE", "0") == "1"
-    if gamma >= 1.0 and gain == 1.0 and not wb and cutoff == 0 and not denoise:
+    if (gamma >= 1.0 and gain == 1.0 and not wb and cutoff == 0 and target == 0
+            and not denoise):
         return
     try:
         from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageStat
@@ -92,6 +105,15 @@ def _brighten(path):
             im = ImageEnhance.Brightness(im).enhance(gain)
         if cutoff > 0:
             im = ImageOps.autocontrast(im, cutoff=cutoff)  # robust black/white point
+        if target > 0:
+            # Adaptive software auto-exposure: lift the mean toward `target`, but
+            # only ever brighten (never darken a good frame) and never more than
+            # `maxgain` (so a near-black frame doesn't get amplified into noise).
+            mean = ImageStat.Stat(im.convert("L")).mean[0]
+            if mean > 1.0:
+                f = min(target / mean, maxgain)
+                if f > 1.02:
+                    im = ImageEnhance.Brightness(im).enhance(f)
         if denoise:
             # Frame-averaging (see _pull_frame) already kills most noise without
             # blur; here just a soft blur for residual speckle + a mild desaturate
